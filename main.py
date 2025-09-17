@@ -48,7 +48,6 @@ def get_wh_inventory(query: str):
     dataframe columns to return: sku, wh_inventory, incoming_containers
     """
 
-
 def calculate_restock(sales:pd.DataFrame, amz_invnetory:pd.DataFrame, wh_inventory:pd.DataFrame) -> pd.DataFrame:
     """
     1. calculate in-stock-rate for the period (amz_inventory)
