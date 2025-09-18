@@ -53,13 +53,73 @@ def get_amazon_inventory(query: str):
     dataframe columns to return: date, sku, asin, Inventory_Supply_at_FBA renamed as "amz_inventory"
     """
 
-def get_wh_inventory(query: str):
+def get_wh_inventory():
     """
     Sergey
     pull latest warehouse inventory including incoming containers from `mellanni-project-da.sellercloud.inventory_bins_partitioned`
     must return dataframe or error string
     dataframe columns to return: sku, wh_inventory, incoming_containers
     """
+
+    wh_query = """
+        WITH LatestInventoryDate AS (
+            SELECT
+                MAX(date_date) AS max_date
+            FROM
+                `mellanni-project-da.sellercloud.inventory_bins_partitioned`
+        ),
+        FilteredInventory AS (
+            SELECT
+                t1.ProductID AS sku,
+                SUM(t1.QtyAvailable) AS wh_inventory,
+            FROM
+                `mellanni-project-da.sellercloud.inventory_bins_partitioned` AS t1
+            INNER JOIN
+                LatestInventoryDate AS t_max
+                ON t1.date_date = t_max.max_date
+            WHERE
+                t1.Sellable = TRUE
+                AND t1.BinType != "Picking"
+                AND NOT STARTS_WITH(t1.BinName, "DS")
+            GROUP BY
+                t1.ProductID
+        )
+        SELECT
+            fi.sku,
+            fi.wh_inventory
+        FROM
+            FilteredInventory AS fi
+        ORDER BY
+            fi.wh_inventory DESC
+    """
+
+    incoming_query = """
+        SELECT
+            items.SKU AS sku,
+            sum(Items.QtyOrdered) as incoming_containers
+        FROM
+            `mellanni-project-da.sellercloud.purchase_orders` AS t1,
+            UNNEST(t1.Items) AS items
+        WHERE
+            date(t1.ExpectedDeliveryDate) >= CURRENT_DATE()
+        GROUP BY items.SKU
+        ORDER BY
+            incoming_containers
+            DESC
+    """
+    try:
+        with gc.gcloud_connect() as client:
+            wh_job = client.query(wh_query)
+            incoming_job = client.query(incoming_query)
+        wh = wh_job.to_dataframe()
+        incoming = incoming_job.to_dataframe()
+
+        result = pd.merge(wh, incoming, how = 'outer', on = 'sku', validate='1:1')
+        return result
+    except Exception as e:
+        return f'Error happened: {e}'  
+
+
 
 def calculate_restock(sales:pd.DataFrame, amz_invnetory:pd.DataFrame, wh_inventory:pd.DataFrame) -> pd.DataFrame:
     """
@@ -75,4 +135,5 @@ def calculate_restock(sales:pd.DataFrame, amz_invnetory:pd.DataFrame, wh_invento
 
 if __name__ == "__main__":
     sales_data = get_amazon_sales()
-    print(sales_data)
+    wh_inventory = get_wh_inventory()
+    print(wh_inventory)
