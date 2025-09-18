@@ -20,17 +20,30 @@ def example_function(query:str) -> pd.DataFrame | str:
         return f'Error happened: {e}'
     return pd.DataFrame()
 
-
-def get_amazon_sales(query: str):
+def get_amazon_sales() -> pd.DataFrame | str:
+    query = """
+        SELECT
+            CAST(purchase_date AS DATE) AS date,
+            asin,
+            SUM(quantity) AS unit_sales,
+            SUM(item_price) AS dollar_sales
+        FROM
+            `mellanni-project-da.reports.all_orders`
+        WHERE
+            CAST(purchase_date AS DATE) BETWEEN '2025-02-17' AND CURRENT_DATE()
+            AND sales_channel = 'Amazon.com'
+            AND NOT (EXTRACT(MONTH FROM purchase_date) = 7 AND EXTRACT(DAY FROM purchase_date) IN (12, 13))
+        GROUP BY
+            1, 2
+        ORDER BY
+            1, 2
     """
-    Bohdan
-    pull sales for last 180 days excluding Prime Day for US market from `mellanni-project-da.reports.all_orders`. group by days.
-    must return dataframe or error string
-    dataframe columns to return: date, asin, unit_sales, dollar_sales
-    """
-    with gc.gcloud_connect() as client:
-        result = client.query(query).to_dataframe()
-
+    try:
+        with gc.gcloud_connect() as client:
+            result = client.query(query).to_dataframe()
+        return result
+    except Exception as e:
+        return f'Error happened: {e}'  
 
 def get_amazon_inventory(query: str):
     """
@@ -48,7 +61,6 @@ def get_wh_inventory(query: str):
     dataframe columns to return: sku, wh_inventory, incoming_containers
     """
 
-
 def calculate_restock(sales:pd.DataFrame, amz_invnetory:pd.DataFrame, wh_inventory:pd.DataFrame) -> pd.DataFrame:
     """
     1. calculate in-stock-rate for the period (amz_inventory)
@@ -60,3 +72,7 @@ def calculate_restock(sales:pd.DataFrame, amz_invnetory:pd.DataFrame, wh_invento
     """
 
     return pd.DataFrame()
+
+if __name__ == "__main__":
+    sales_data = get_amazon_sales()
+    print(sales_data)
