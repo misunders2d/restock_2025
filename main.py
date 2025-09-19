@@ -52,6 +52,13 @@ def get_amazon_inventory(query: str):
     must return dataframe or error string
     dataframe columns to return: date, sku, asin, Inventory_Supply_at_FBA renamed as "amz_inventory"
     """
+    try:
+        with gc.gcloud_connect() as client:
+            result = client.query(query).to_dataframe()
+        return result
+    except Exception as e:
+        return f'Error happened: {e}'
+
 
 def get_wh_inventory():
     """
