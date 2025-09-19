@@ -41,8 +41,11 @@ def get_amazon_inventory(query: str):
     """
     try:
         with gc.gcloud_connect() as client:
-            result = client.query(query).to_dataframe()
-        return result
+            df = client.query(query).to_dataframe()
+        # Оставляем только нужные колонки и переименовываем
+        df = df[['date', 'sku', 'asin', 'Inventory_Supply_at_FBA']]
+        df = df.rename(columns={'Inventory_Supply_at_FBA': 'amz_inventory'})
+        return df
     except Exception as e:
         return f'Error happened: {e}'
 
