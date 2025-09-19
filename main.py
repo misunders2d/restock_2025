@@ -139,12 +139,15 @@ def calculate_restock(sales:pd.DataFrame, amz_invnetory:pd.DataFrame, wh_invento
 
 user_folder = r'C:\temp'
 
-# amazon_inventory_path = os.path.join(user_folder, 'inventory.xlsx')
+amazon_sales = get_amazon_sales()
+wh_inventory = get_wh_inventory()
+
+amazon_inventory_path = os.path.join(user_folder, 'inventory.xlsx')
 # amazon_sales_path = os.path.join(user_folder, 'sales_daily.xlsx')
-# amazon_inventory = pd.read_excel(amazon_inventory_path, usecols=['date', 'asin', 'amz_inventory'])
+amazon_inventory = pd.read_excel(amazon_inventory_path, usecols=['date', 'asin', 'amz_inventory'])
 # amazon_sales = pd.read_excel(amazon_sales_path, usecols=['date', 'asin', 'unit_sales'])
-# amazon_sales['date'] = pd.to_datetime(amazon_sales['date'])
-# amazon_inventory['date'] = pd.to_datetime(amazon_inventory['date'])
+amazon_sales['date'] = pd.to_datetime(amazon_sales['date'])
+amazon_inventory['date'] = pd.to_datetime(amazon_inventory['date'])
 
 days_of_sale = 49
 
@@ -223,6 +226,4 @@ def main():
     os.startfile(os.path.join(user_folder))
 
 if __name__ == "__main__":
-    amazon_sales = get_amazon_sales()
-    wh_inventory = get_wh_inventory()
     main()
