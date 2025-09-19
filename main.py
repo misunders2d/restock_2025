@@ -3,8 +3,12 @@ import pandas as pd
 import os
 from utils import mellanni_modules as mm
 
+user_folder = os.path.join(os.path.expanduser('~'), 'temp')
+os.makedirs(user_folder, exist_ok=True)
+days_of_sale = 49
 
-def get_amazon_sales() -> pd.DataFrame | str:
+
+def get_amazon_sales() -> pd.DataFrame:
     """
     Bohdan
     pull sales for last 180 days excluding Prime Day for US market from `mellanni-project-da.reports.all_orders`. group by days.
@@ -34,27 +38,39 @@ def get_amazon_sales() -> pd.DataFrame | str:
             result = client.query(query).to_dataframe()
         return result
     except Exception as e:
-        return f'Error happened: {e}'  
+        return pd.DataFrame([f'error happened: {e}'], columns = ["Error"])
 
-def get_amazon_inventory(query: str):
+def get_amazon_inventory() -> pd.DataFrame:
     """
     Vitalii
     pull inventory history for last 180 days for all skus in US from `mellanni-project-da.reports.fba_inventory_planning`
     must return dataframe or error string
     dataframe columns to return: date, sku, asin, Inventory_Supply_at_FBA renamed as "amz_inventory"
     """
+    query = """
+        SELECT
+            DATE(snapshot_date) AS date,
+            sku,
+            asin,
+            Inventory_Supply_at_FBA AS amz_inventory
+        FROM
+            `mellanni-project-da.reports.fba_inventory_planning`
+        WHERE
+            marketplace = 'US'
+            AND DATE(snapshot_date) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) AND CURRENT_DATE()
+        ORDER BY
+            date DESC, sku ASC
+    """
+
     try:
         with gc.gcloud_connect() as client:
             df = client.query(query).to_dataframe()
-        # Оставляем только нужные колонки и переименовываем
-        df = df[['date', 'sku', 'asin', 'Inventory_Supply_at_FBA']]
-        df = df.rename(columns={'Inventory_Supply_at_FBA': 'amz_inventory'})
         return df
     except Exception as e:
-        return f'Error happened: {e}'
+        return pd.DataFrame([f'error happened: {e}'], columns = ["Error"])
 
 
-def get_wh_inventory():
+def get_wh_inventory() -> pd.DataFrame:
     """
     Sergey
     pull latest warehouse inventory including incoming containers from `mellanni-project-da.sellercloud.inventory_bins_partitioned`
@@ -118,12 +134,13 @@ def get_wh_inventory():
         result = pd.merge(wh, incoming, how = 'outer', on = 'sku', validate='1:1')
         return result
     except Exception as e:
-        return f'Error happened: {e}'  
+        return pd.DataFrame([f'error happened: {e}'], columns = ["Error"])
 
 
 
-def calculate_restock(sales:pd.DataFrame, amz_invnetory:pd.DataFrame, wh_inventory:pd.DataFrame) -> pd.DataFrame:
+def calculate_restock() -> pd.DataFrame:
     """
+    Ruslan
     1. calculate in-stock-rate for the period (amz_inventory)
     2. calculate average sales 180 days and 14 days
     3. calculate average combined as average of (average sales 180 days and 14 days)
@@ -132,76 +149,64 @@ def calculate_restock(sales:pd.DataFrame, amz_invnetory:pd.DataFrame, wh_invento
         asin, average_sales_180, average_sales_14, average_combined, isr, amz_inventory (latest), wh_inventory (latest), units_to_ship
     """
 
-    return pd.DataFrame()
-  
+    amazon_sales = get_amazon_sales()
+    amazon_sales['date'] = pd.to_datetime(amazon_sales['date'])
+    wh_inventory = get_wh_inventory()
+    amazon_inventory = get_amazon_inventory()
+    amazon_inventory['date'] = pd.to_datetime(amazon_inventory['date'])
+    
+      
 
-user_folder = r'C:\temp'
-
-amazon_sales = get_amazon_sales()
-wh_inventory = get_wh_inventory()
-
-amazon_inventory_path = os.path.join(user_folder, 'inventory.xlsx')
-# amazon_sales_path = os.path.join(user_folder, 'sales_daily.xlsx')
-amazon_inventory = pd.read_excel(amazon_inventory_path, usecols=['date', 'asin', 'amz_inventory'])
-# amazon_sales = pd.read_excel(amazon_sales_path, usecols=['date', 'asin', 'unit_sales'])
-amazon_sales['date'] = pd.to_datetime(amazon_sales['date'])
-amazon_inventory['date'] = pd.to_datetime(amazon_inventory['date'])
-
-days_of_sale = 49
+    def calculate_inventory_isr(amazon_inventory):
+        inventory_grouped = amazon_inventory.groupby(['date','asin']).agg('sum').reset_index()
+        inventory_grouped['in-stock-rate'] = inventory_grouped['amz_inventory'] > 0
+        asin_isr = (inventory_grouped.groupby('asin')[['in-stock-rate']].agg('mean').reset_index()).round(2)
+        return asin_isr
 
 
-def calculate_inventory_isr(amazon_inventory):
-    inventory_grouped = amazon_inventory.groupby(['date','asin']).agg('sum').reset_index()
-    inv_total_days = inventory_grouped['date'].nunique()
-    inventory_grouped['in-stock-rate'] = inventory_grouped['amz_inventory'] > 0
-    asin_isr = (inventory_grouped.groupby('asin')[['in-stock-rate']].agg('mean').reset_index()).round(2)
-    return asin_isr, inv_total_days
+    def fill_dates(amazon_sales:pd.DataFrame):
+        start_date = amazon_sales['date'].min()
+        end_date = amazon_sales['date'].max()
+        date_range = pd.date_range(start=start_date, end=end_date)
+        full_dates = pd.DataFrame(date_range, columns=['date'])
+        asin_list = amazon_sales['asin'].unique()
+
+        all_files = []
+        for asin in asin_list:
+            temp_df = amazon_sales[amazon_sales['asin']==asin]
+            full_asin = pd.merge(full_dates, temp_df, how = 'left', on = 'date')
+            full_asin['asin']=asin
+            all_files.append(full_asin)
+        all_sales = pd.concat(all_files)
+        all_sales = all_sales.fillna(0)
+        return all_sales
 
 
-def fill_dates(amazon_sales:pd.DataFrame):
-    start_date = amazon_sales['date'].min()
-    end_date = amazon_sales['date'].max()
-    date_range = pd.date_range(start=start_date, end=end_date)
-    full_dates = pd.DataFrame(date_range, columns=['date'])
-    asin_list = amazon_sales['asin'].unique()
-
-    all_files = []
-    for asin in asin_list:
-        temp_df = amazon_sales[amazon_sales['asin']==asin]
-        full_asin = pd.merge(full_dates, temp_df, how = 'left', on = 'date')
-        full_asin['asin']=asin
-        all_files.append(full_asin)
-    all_sales = pd.concat(all_files)
-    all_sales = all_sales.fillna(0)
-    return all_sales
+    def last_2_weeks_sales(amazon_sales:pd.DataFrame, amazon_inventory:pd.DataFrame):
+        last_date = amazon_sales['date'].max()
+        cut_off_date = last_date - pd.Timedelta(days=13)
+        latest_sales = amazon_sales[amazon_sales['date'] >= cut_off_date]
+        latest_inventory = amazon_inventory[amazon_inventory['date'] >= cut_off_date]
+        latest_inventory = latest_inventory.groupby(['date','asin'])[['amz_inventory']].agg('sum').reset_index()
+        latest_inventory['in-stock-rate'] = latest_inventory['amz_inventory'] > 0
+        latest_isr = latest_inventory.groupby('asin')[['in-stock-rate']].agg('mean').reset_index()
+        latest_sales = latest_sales.groupby('asin')[['unit_sales']].agg('sum').reset_index()
+        latest_sales = pd.merge(latest_sales, latest_isr, on='asin', how='outer')
+        latest_sales['average_sales_14'] = latest_sales['unit_sales'] / 14
+        latest_sales['average_sales_14'] = (latest_sales['average_sales_14'] / latest_sales['in-stock-rate']).round(3)
+        return latest_sales[['asin','average_sales_14']]
 
 
-def last_2_weeks_sales(amazon_sales:pd.DataFrame, amazon_inventory:pd.DataFrame):
-    last_date = amazon_sales['date'].max()
-    cut_off_date = last_date - pd.Timedelta(days=13)
-    latest_sales = amazon_sales[amazon_sales['date'] >= cut_off_date]
-    latest_inventory = amazon_inventory[amazon_inventory['date'] >= cut_off_date]
-    latest_inventory = latest_inventory.groupby(['date','asin'])[['amz_inventory']].agg('sum').reset_index()
-    latest_inventory['in-stock-rate'] = latest_inventory['amz_inventory'] > 0
-    latest_isr = latest_inventory.groupby('asin')[['in-stock-rate']].agg('mean').reset_index()
-    latest_sales = latest_sales.groupby('asin')[['unit_sales']].agg('sum').reset_index()
-    latest_sales = pd.merge(latest_sales, latest_isr, on='asin', how='outer')
-    latest_sales['average_sales_14'] = latest_sales['unit_sales'] / 14
-    latest_sales['average_sales_14'] = (latest_sales['average_sales_14'] / latest_sales['in-stock-rate']).round(3)
-    return latest_sales[['asin','average_sales_14']]
+    def get_asin_sales(amazon_sales:pd.DataFrame):
+        sales_total_days = amazon_sales['date'].nunique()
+        latest_sales = last_2_weeks_sales(amazon_sales, amazon_inventory)
+        total_sales = amazon_sales.groupby('asin')[['unit_sales']].agg('sum').reset_index()
+        total_sales['average_sales_180'] = (total_sales['unit_sales'] / sales_total_days).round(3)
+        total_sales = pd.merge(total_sales, latest_sales, on='asin', how='outer')
+        return total_sales, sales_total_days
 
 
-def get_asin_sales(amazon_sales:pd.DataFrame):
-    sales_total_days = amazon_sales['date'].nunique()
-    latest_sales = last_2_weeks_sales(amazon_sales, amazon_inventory)
-    total_sales = amazon_sales.groupby('asin')[['unit_sales']].agg('sum').reset_index()
-    total_sales['average_sales_180'] = (total_sales['unit_sales'] / sales_total_days).round(3)
-    total_sales = pd.merge(total_sales, latest_sales, on='asin', how='outer')
-    return total_sales, sales_total_days
-
-
-def main():
-    asin_isr, inv_total_days = calculate_inventory_isr(amazon_inventory[['date', 'asin', 'amz_inventory']].copy())
+    asin_isr = calculate_inventory_isr(amazon_inventory[['date', 'asin', 'amz_inventory']].copy())
     total_sales, sales_total_days = get_asin_sales(amazon_sales)
     result = pd.merge(asin_isr, total_sales, on='asin', how='outer')
     result['in-stock-rate'] = result['in-stock-rate'].fillna(0)
@@ -221,7 +226,8 @@ def main():
     result['days_of_sale_remaining'] = result['days_of_sale_remaining'].fillna(0)
     result['units_to_ship'] = ((result['average_combined'] * days_of_sale - result['amz_inventory']).round(0)).apply(lambda x: x if x > 0 else 0)
     mm.export_to_excel([result],['restock'], 'inventory_restock.xlsx', user_folder)
-    os.startfile(os.path.join(user_folder))
+    mm.open_file_folder(os.path.join(user_folder))
+    return result
 
 if __name__ == "__main__":
-    main()
+    calculate_restock()
