@@ -4,26 +4,14 @@ import os
 from utils import mellanni_modules as mm
 
 
-def example_function(query:str) -> pd.DataFrame | str:
-    """
-    Uses Bigquery to pull sales from our database on Amazon sales
-
-    Arg:
-        query (str): an SQL query to run to Bigquery
-
-    Returns:
-        DataFrame: pandas dataframe with query result
-        or
-        str: error message
-    """
-    try:
-        print('This is a test function')
-        #your code
-    except Exception as e:
-        return f'Error happened: {e}'
-    return pd.DataFrame()
-
 def get_amazon_sales() -> pd.DataFrame | str:
+    """
+    Bohdan
+    pull sales for last 180 days excluding Prime Day for US market from `mellanni-project-da.reports.all_orders`. group by days.
+    must return dataframe or error string
+    dataframe columns to return: date, asin, unit_sales, dollar_sales
+    """
+
     query = """
         SELECT
             CAST(purchase_date AS DATE) AS date,
@@ -33,9 +21,9 @@ def get_amazon_sales() -> pd.DataFrame | str:
         FROM
             `mellanni-project-da.reports.all_orders`
         WHERE
-            CAST(purchase_date AS DATE) BETWEEN '2025-02-17' AND CURRENT_DATE()
+            CAST(purchase_date AS DATE) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) AND CURRENT_DATE()
             AND sales_channel = 'Amazon.com'
-            AND NOT (EXTRACT(MONTH FROM purchase_date) = 7 AND EXTRACT(DAY FROM purchase_date) IN (12, 13))
+            AND NOT (EXTRACT(MONTH FROM purchase_date) = 7 AND EXTRACT(DAY FROM purchase_date) IN (8,9,10,11))
         GROUP BY
             1, 2
         ORDER BY
