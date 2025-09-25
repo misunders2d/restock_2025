@@ -1,4 +1,5 @@
 from connectors import gcloud as gc
+from numpy import asin
 import pandas as pd
 import os
 from utils import mellanni_modules as mm
@@ -158,11 +159,12 @@ def calculate_restock() -> pd.DataFrame:
       
 
     def calculate_inventory_isr(amazon_inventory):
-        inventory_grouped = amazon_inventory.groupby(['date','asin']).agg('sum').reset_index()
+        inventory_grouped = amazon_inventory.groupby(['date', 'sku']).agg({'amz_inventory': 'sum','asin': 'first'}).reset_index()
         inventory_grouped['in-stock-rate'] = inventory_grouped['amz_inventory'] > 0
-        asin_isr = (inventory_grouped.groupby('asin')[['in-stock-rate']].agg('mean').reset_index()).round(2)
+        asin_isr = inventory_grouped.groupby('sku').agg({'in-stock-rate': 'mean','asin': 'first'}).reset_index().round(2)
+        asin_isr = pd.merge(asin_isr, wh_inventory, on='sku', how='left')
+        asin_isr = asin_isr[['asin','sku','in-stock-rate','wh_inventory','incoming_containers']]
         return asin_isr
-
 
     def fill_dates(amazon_sales:pd.DataFrame):
         start_date = amazon_sales['date'].min()
@@ -206,7 +208,7 @@ def calculate_restock() -> pd.DataFrame:
         return total_sales, sales_total_days
 
 
-    asin_isr = calculate_inventory_isr(amazon_inventory[['date', 'asin', 'amz_inventory']].copy())
+    asin_isr = calculate_inventory_isr(amazon_inventory[['date','sku', 'asin', 'amz_inventory']].copy())
     total_sales, sales_total_days = get_asin_sales(amazon_sales)
     result = pd.merge(asin_isr, total_sales, on='asin', how='outer')
     result['in-stock-rate'] = result['in-stock-rate'].fillna(0)
@@ -225,6 +227,7 @@ def calculate_restock() -> pd.DataFrame:
     result['days_of_sale_remaining'] = (result['amz_inventory'] / result['average_combined']).round(0)
     result['days_of_sale_remaining'] = result['days_of_sale_remaining'].fillna(0)
     result['units_to_ship'] = ((result['average_combined'] * days_of_sale - result['amz_inventory']).round(0)).apply(lambda x: x if x > 0 else 0)
+    result = result[['asin','sku','in-stock-rate', 'unit_sales_180','average_sales_180','average_sales_14','average_combined','amz_inventory','days_of_sale_remaining','units_to_ship','wh_inventory', 'incoming_containers']]
     mm.export_to_excel([result],['restock'], 'inventory_restock.xlsx', user_folder)
     mm.open_file_folder(os.path.join(user_folder))
     return result
