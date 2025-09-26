@@ -1,5 +1,4 @@
 from connectors import gcloud as gc
-from numpy import asin
 import pandas as pd
 import os
 from utils import mellanni_modules as mm
