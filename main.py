@@ -2,10 +2,28 @@ from connectors import gcloud as gc
 import pandas as pd
 import os
 from utils import mellanni_modules as mm
+from connectors import gdrive as gd
+from typing import Literal
 
 user_folder = os.path.join(os.path.expanduser("~"), "temp")
 os.makedirs(user_folder, exist_ok=True)
 days_of_sale = 49
+
+
+def get_event_spreadsheet(event: Literal['BFCM', 'BSS','PD','PBDD'] | None = None) -> pd.DataFrame:
+    spreadsheet = gd.download_gspread(spreadsheet_id="1_gSk2xSDuyEQ9qzI15NJBxVCBZSJMuTKS1pDsvnfes8")
+    if event == "BFCM":
+        columns_to_return = ["ASIN", "sku", "Best BFCM performance	Best BSS performance"]
+    elif event == "BSS":
+        columns_to_return = ["ASIN", "sku", "Best BSS performance"]
+    elif event == "PD":
+        columns_to_return = ["ASIN", "sku", "Average PD sales, units (1 day)","Best PD performance"]
+    elif event == "PBDD":
+        columns_to_return = ["ASIN", "sku", "Average PBDD sales, units (1 day)","Best PBDD performance"]
+    else:
+        columns_to_return = spreadsheet.columns.tolist()
+    spreadsheet = spreadsheet[columns_to_return]
+    return spreadsheet
 
 
 def get_amazon_sales() -> pd.DataFrame:

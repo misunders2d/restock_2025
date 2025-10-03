@@ -1,0 +1,54 @@
+import datetime
+from typing import Literal
+
+
+current_year, current_month, current_day = datetime.datetime.now().year, datetime.datetime.now().month, datetime.datetime.now().day
+
+
+
+def get_month_day(
+    month: int,
+    year: int,
+    day_of_week: int, # 0=Monday, 6=Sunday
+    order: Literal["first", "second", "third", "fourth", "last"] = "last",
+):
+    """Return the day of the month for a specific event based on month and year."""
+    first_day = datetime.date(year, month, 1)
+    first_weekday = first_day.weekday()
+
+    # Find the first occurrence of the target weekday in the month
+    days_until_target = (day_of_week - first_weekday) % 7
+    first_occurrence = first_day + datetime.timedelta(days=days_until_target)
+
+    if order == "first":
+        target_date = first_occurrence
+    elif order == "second":
+        target_date = first_occurrence + datetime.timedelta(weeks=1)
+    elif order == "third":
+        target_date = first_occurrence + datetime.timedelta(weeks=2)
+    elif order == "fourth":
+        target_date = first_occurrence + datetime.timedelta(weeks=3)
+    elif order == "last":
+        # Find the last occurrence of the target weekday in the month
+        last_day = datetime.date(year, month + 1, 1) - datetime.timedelta(days=1) if month < 12 else datetime.date(year, 12, 31)
+        last_weekday = last_day.weekday()
+        days_since_target = (last_weekday - day_of_week) % 7
+        target_date = last_day - datetime.timedelta(days=days_since_target)
+    else:
+        raise ValueError("Invalid order value")
+
+    return target_date.day
+
+
+events = {
+    "BSS": {"month": 3, "day": 20, "duration": 2},
+    "PD": {"month": 7, "day": 10, "duration": 4},
+    "PBDD": {"month": 10, "day": 7, "duration": 2},
+    "BFCM": {"month": 11, "day": get_month_day(11, current_year, 4, order="second"), "duration": 4},  # Last Friday in November
+}
+
+distances = {}
+for event, date in events.items():
+    distances[event] = date['month'] - current_month if date['month'] >= current_month else (12 - current_month + date['month'])
+
+nearest_event = min(distances, key=distances.get) #type: ignore
