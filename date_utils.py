@@ -83,4 +83,4 @@ def get_event_days_delta():
         - datetime.date(current_year, current_month, current_day)
     ).days
 
-    return nearest_event, days_to_event, events[nearest_event]['duration']
+    return nearest_event, days_to_event, events[nearest_event]["duration"]
