@@ -2,7 +2,7 @@ from connectors import gcloud as gc
 import pandas as pd
 import os
 from utils import mellanni_modules as mm
-from restock_utils import last_2_weeks_sales, calculate_inventory_isr
+from restock_utils import calculate_inventory_isr, get_asin_sales
 from connectors import gdrive as gd
 from typing import Literal
 import threading
@@ -226,21 +226,6 @@ def calculate_restock() -> pd.DataFrame:
         amazon_inventory[["date", "asin", "amz_inventory"]].copy()
     )
 
-    def get_asin_sales(amazon_sales: pd.DataFrame):
-        sales_total_days = (
-            amazon_sales["date"].max() - amazon_sales["date"].min()
-        ).days
-        # sales_total_days = amazon_sales["date"].nunique()
-        latest_sales = last_2_weeks_sales(amazon_sales, amazon_inventory)
-        total_sales = (
-            amazon_sales.groupby("asin")[["unit_sales"]].agg("sum").reset_index()
-        )
-        total_sales["average_sales_180"] = (
-            total_sales["unit_sales"] / sales_total_days
-        ).round(3)
-        total_sales = pd.merge(total_sales, latest_sales, on="asin", how="outer")
-        return total_sales, sales_total_days
-
     def fill_dates(amazon_sales: pd.DataFrame):
         start_date = amazon_sales["date"].min()
         end_date = amazon_sales["date"].max()
@@ -258,80 +243,82 @@ def calculate_restock() -> pd.DataFrame:
         all_sales = all_sales.fillna(0)
         return all_sales
 
-    total_sales, sales_total_days = get_asin_sales(amazon_sales)
-    result = pd.merge(asin_isr, total_sales, on="asin", how="outer")
-    result["in-stock-rate"] = result["in-stock-rate"].fillna(0)
-    result["unit_sales"] = result["unit_sales"].fillna(0)
-    result.rename(columns={"unit_sales": "unit_sales_180"}, inplace=True)
-    result["average_sales_180"] = (
-        result["average_sales_180"] / result["in-stock-rate"]
-    ).round(3)
-    result["average_sales_180"] = result["average_sales_180"].fillna(0)
-    result["average_sales_14"] = result["average_sales_14"].fillna(0)
-    result["average_combined"] = (
-        result["average_sales_180"] * 0.4 + result["average_sales_14"] * 0.6
-    ).round(3)
+    total_sales = get_asin_sales(amazon_sales, asin_isr)
+    # result = pd.merge(asin_isr, total_sales, on="asin", how="outer")
+    # result["in-stock-rate"] = result["in-stock-rate"].fillna(0)
+    # result["unit_sales"] = result["unit_sales"].fillna(0)
+    # result.rename(columns={"unit_sales": "unit_sales_180"}, inplace=True)
+    # result["average_sales_180"] = (
+    #     result["average_sales_180"] / result["in-stock-rate"]
+    # ).round(3)
+    # result["average_sales_180"] = result["average_sales_180"].fillna(0)
+    # result["average_sales_14"] = result["average_sales_14"].fillna(0)
+    # result["average_combined"] = (
+    #     result["average_sales_180"] * 0.4 + result["average_sales_14"] * 0.6
+    # ).round(3)
 
-    #### call event function
-    event, days_to_event, event_duration = get_event_days_delta()
-    event_spreadsheet = get_event_spreadsheet(event)
-    for column in event_spreadsheet.columns.tolist()[2:]:
-        event_spreadsheet.loc[event_spreadsheet[column] == "", column] = 0
-        try:
-            event_spreadsheet[column] = event_spreadsheet[column].astype(float)
-        except Exception as e:
-            print(f"Ran into an error: {e}")
-            pass
-    # event_spreadsheet = event_spreadsheet.fillna(0)
-    event_asin_performance = (
-        event_spreadsheet.iloc[:, [0, 2, 3]].groupby("ASIN").agg("max").reset_index()
+    # #### call event function
+    # event, days_to_event, event_duration = get_event_days_delta()
+    # event_spreadsheet = get_event_spreadsheet(event)
+    # for column in event_spreadsheet.columns.tolist()[2:]:
+    #     event_spreadsheet.loc[event_spreadsheet[column] == "", column] = 0
+    #     try:
+    #         event_spreadsheet[column] = event_spreadsheet[column].astype(float)
+    #     except Exception as e:
+    #         print(f"Ran into an error: {e}")
+    #         pass
+    # # event_spreadsheet = event_spreadsheet.fillna(0)
+    # event_asin_performance = (
+    #     event_spreadsheet.iloc[:, [0, 2, 3]].groupby("ASIN").agg("max").reset_index()
+    # )
+    # event_asin_performance = pd.merge(
+    #     result[["asin", "average_combined"]],
+    #     event_asin_performance,
+    #     how="outer",
+    #     left_on="asin",
+    #     right_on="ASIN",
+    #     validate="1:1",
+    # )
+
+    # #############################################TODO
+
+    # amazon_inventory_copy = amazon_inventory.copy()
+    # latest_date = amazon_inventory_copy["date"].max()
+    # latest_inventory = amazon_inventory_copy[
+    #     amazon_inventory_copy["date"] == latest_date
+    # ]
+    # quantity_map = latest_inventory.groupby("asin")["amz_inventory"].sum().reset_index()
+    # result = pd.merge(result, quantity_map, on="asin", how="outer")
+    # result["amz_inventory"] = result["amz_inventory"].fillna(0)
+    # result["days_of_sale_remaining"] = (
+    #     result["amz_inventory"] / result["average_combined"]
+    # ).round(0)
+    # result["days_of_sale_remaining"] = result["days_of_sale_remaining"].fillna(0)
+
+    # result["units_to_ship"] = (
+    #     (result["average_combined"] * days_of_sale - result["amz_inventory"]).round(0)
+    # ).apply(lambda x: x if x > 0 else 0)
+    # result = result[
+    #     [
+    #         "asin",
+    #         "sku",
+    #         "in-stock-rate",
+    #         "unit_sales_180",
+    #         "average_sales_180",
+    #         "average_sales_14",
+    #         "average_combined",
+    #         "amz_inventory",
+    #         "days_of_sale_remaining",
+    #         "units_to_ship",
+    #         "wh_inventory",
+    #         "incoming_containers",
+    #     ]
+    # ]
+    mm.export_to_excel(
+        [total_sales], ["restock"], "inventory_restock.xlsx", user_folder
     )
-    event_asin_performance = pd.merge(
-        result[["asin", "average_combined"]],
-        event_asin_performance,
-        how="outer",
-        left_on="asin",
-        right_on="ASIN",
-        validate="1:1",
-    )
-
-    #############################################TODO
-
-    amazon_inventory_copy = amazon_inventory.copy()
-    latest_date = amazon_inventory_copy["date"].max()
-    latest_inventory = amazon_inventory_copy[
-        amazon_inventory_copy["date"] == latest_date
-    ]
-    quantity_map = latest_inventory.groupby("asin")["amz_inventory"].sum().reset_index()
-    result = pd.merge(result, quantity_map, on="asin", how="outer")
-    result["amz_inventory"] = result["amz_inventory"].fillna(0)
-    result["days_of_sale_remaining"] = (
-        result["amz_inventory"] / result["average_combined"]
-    ).round(0)
-    result["days_of_sale_remaining"] = result["days_of_sale_remaining"].fillna(0)
-
-    result["units_to_ship"] = (
-        (result["average_combined"] * days_of_sale - result["amz_inventory"]).round(0)
-    ).apply(lambda x: x if x > 0 else 0)
-    result = result[
-        [
-            "asin",
-            "sku",
-            "in-stock-rate",
-            "unit_sales_180",
-            "average_sales_180",
-            "average_sales_14",
-            "average_combined",
-            "amz_inventory",
-            "days_of_sale_remaining",
-            "units_to_ship",
-            "wh_inventory",
-            "incoming_containers",
-        ]
-    ]
-    mm.export_to_excel([result], ["restock"], "inventory_restock.xlsx", user_folder)
     mm.open_file_folder(os.path.join(user_folder))
-    return result
+    return total_sales
 
 
 if __name__ == "__main__":

@@ -1,43 +1,19 @@
 import pandas as pd
 
 
-def last_2_weeks_sales(amazon_sales: pd.DataFrame, amazon_inventory: pd.DataFrame):
-    last_date = amazon_sales["date"].max()
-    cut_off_date = last_date - pd.Timedelta(days=13)
-    latest_sales = amazon_sales[amazon_sales["date"] >= cut_off_date]
-    latest_inventory = amazon_inventory[amazon_inventory["date"] >= cut_off_date]
-    latest_inventory = (
-        latest_inventory.groupby(["date", "asin"])[["amz_inventory"]]
-        .agg("sum")
-        .reset_index()
-    )
-    latest_inventory["in-stock-rate"] = latest_inventory["amz_inventory"] > 0
-    latest_isr = (
-        latest_inventory.groupby("asin")[["in-stock-rate"]].agg("mean").reset_index()
-    )
-    latest_sales = latest_sales.groupby("asin")[["unit_sales"]].agg("sum").reset_index()
-    latest_sales = pd.merge(latest_sales, latest_isr, on="asin", how="outer")
-    latest_sales["average_sales_14"] = latest_sales["unit_sales"] / 14
-    latest_sales["average_sales_14"] = (
-        latest_sales["average_sales_14"] / latest_sales["in-stock-rate"]
-    ).round(3)
-    return latest_sales[["asin", "average_sales_14"]]
-
-
-def calculate_inventory_isr(amazon_inventory):
+def calculate_inventory_isr(amazon_inventory):  # done
 
     inv_max_date = amazon_inventory["date"].max()
 
-    inventory_grouped = (
+    inventory_grouped: pd.DataFrame = (
         amazon_inventory.groupby(["date", "asin"]).agg("sum").reset_index()
     )
 
-    two_week_inventory = inventory_grouped[
-        (inventory_grouped["date"] <= inv_max_date - pd.Timedelta(days=13))
-    ]
-
     inventory_grouped["in-stock-rate"] = inventory_grouped["amz_inventory"] > 0
-    two_week_inventory["in-stock-rate"] = two_week_inventory["amz_inventory"] > 0
+
+    two_week_inventory = inventory_grouped[
+        (inventory_grouped["date"] >= inv_max_date - pd.Timedelta(days=13))
+    ]
 
     asin_isr_long_term = (
         inventory_grouped.pivot_table(
@@ -64,3 +40,76 @@ def calculate_inventory_isr(amazon_inventory):
     )
 
     return asin_isr
+
+
+def get_asin_sales(amazon_sales: pd.DataFrame, asin_isr: pd.DataFrame):
+    sales_total_days: pd.Timedelta = (
+        amazon_sales["date"].max() - amazon_sales["date"].min()
+    ).days
+    sales_max_date = amazon_sales["date"].max() - pd.Timedelta(days=1)
+    amazon_sales = amazon_sales[amazon_sales["date"] <= sales_max_date]
+    amazon_sales = amazon_sales.fillna(0)
+
+    latest_sales = amazon_sales[
+        amazon_sales["date"].between(
+            sales_max_date - pd.Timedelta(days=13), sales_max_date
+        )
+    ]
+    long_term_sales = (
+        amazon_sales.groupby("asin")
+        .agg({"unit_sales": "sum", "dollar_sales": "sum"})
+        .reset_index()
+    )
+    short_term_sales = (
+        latest_sales.groupby("asin")
+        .agg({"unit_sales": "sum", "dollar_sales": "sum"})
+        .reset_index()
+    )
+    long_term_sales = pd.merge(
+        long_term_sales, asin_isr, how="left", on="asin", validate="1:1"
+    )
+    short_term_sales = pd.merge(
+        short_term_sales, asin_isr, how="left", on="asin", validate="1:1"
+    )
+
+    long_term_sales["avg sales dollar, 180 days"] = (
+        long_term_sales["dollar_sales"] / 180 / long_term_sales["ISR"]
+    ).round(2)
+    long_term_sales["avg sales units, 180 days"] = (
+        long_term_sales["unit_sales"] / 180 / long_term_sales["ISR"]
+    ).round(2)
+    short_term_sales["avg sales dollar, 14 days"] = (
+        short_term_sales["dollar_sales"] / 14 / short_term_sales["ISR_short"]
+    ).round(2)
+    short_term_sales["avg sales units, 14 days"] = (
+        short_term_sales["unit_sales"] / 14 / short_term_sales["ISR_short"]
+    ).round(2)
+
+    total_sales = pd.merge(
+        short_term_sales[
+            [
+                "asin",
+                "ISR",
+                "ISR_short",
+                "avg sales dollar, 14 days",
+                "avg sales units, 14 days",
+            ]
+        ],
+        long_term_sales[
+            ["asin", "avg sales dollar, 180 days", "avg sales units, 180 days"]
+        ],
+        on="asin",
+        how="outer",
+        validate="1:1",
+    ).fillna(0)
+
+    total_sales["avg units"] = (
+        (0.6 * total_sales["avg sales units, 14 days"])
+        + (0.4 * total_sales["avg sales units, 180 days"])
+    ).round(2)
+    total_sales["avg $"] = (
+        (0.6 * total_sales["avg sales dollar, 14 days"])
+        + (0.4 * total_sales["avg sales dollar, 180 days"])
+    ).round(2)
+
+    return total_sales
