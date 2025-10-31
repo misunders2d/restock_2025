@@ -1,4 +1,5 @@
 import pandas as pd
+from date_utils import get_last_non_event_days
 
 
 def calculate_inventory_isr(amazon_inventory):  # done
@@ -42,19 +43,23 @@ def calculate_inventory_isr(amazon_inventory):  # done
     return asin_isr
 
 
-def get_asin_sales(amazon_sales: pd.DataFrame, asin_isr: pd.DataFrame):
-    sales_total_days: pd.Timedelta = (
-        amazon_sales["date"].max() - amazon_sales["date"].min()
-    ).days
+def get_asin_sales(
+    amazon_sales: pd.DataFrame, asin_isr: pd.DataFrame, include_events: bool = False
+):
+
     sales_max_date = amazon_sales["date"].max() - pd.Timedelta(days=1)
-    amazon_sales = amazon_sales[amazon_sales["date"] <= sales_max_date]
+    non_event_days = get_last_non_event_days(
+        num_days=180, max_date=sales_max_date, include_events=True
+    )
+    non_event_days_14 = get_last_non_event_days(
+        num_days=14, max_date=sales_max_date, include_events=True
+    )
+
+    amazon_sales = amazon_sales[amazon_sales["date"].isin(non_event_days)]
     amazon_sales = amazon_sales.fillna(0)
 
-    latest_sales = amazon_sales[
-        amazon_sales["date"].between(
-            sales_max_date - pd.Timedelta(days=13), sales_max_date
-        )
-    ]
+    latest_sales = amazon_sales[amazon_sales["date"].isin(non_event_days_14)]
+
     long_term_sales = (
         amazon_sales.groupby("asin")
         .agg({"unit_sales": "sum", "dollar_sales": "sum"})

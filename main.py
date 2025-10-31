@@ -73,9 +73,8 @@ def get_amazon_sales(to_print) -> pd.DataFrame:
         FROM
             `mellanni-project-da.reports.all_orders`
         WHERE
-            CAST(purchase_date AS DATE) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 180 DAY) AND CURRENT_DATE()
+            CAST(purchase_date AS DATE) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 270 DAY) AND CURRENT_DATE()
             AND sales_channel = 'Amazon.com'
-            AND NOT (EXTRACT(MONTH FROM purchase_date) = 7 AND EXTRACT(DAY FROM purchase_date) IN (8,9,10,11))
         GROUP BY
             1, 2
         ORDER BY
@@ -193,7 +192,7 @@ def get_wh_inventory(to_print) -> pd.DataFrame:
         return pd.DataFrame([f"error happened: {e}"], columns=["Error"])
 
 
-def calculate_restock() -> pd.DataFrame:
+def calculate_restock(include_events: bool) -> pd.DataFrame:
     """
     Ruslan
     1. calculate in-stock-rate for the period (amz_inventory)
@@ -243,7 +242,7 @@ def calculate_restock() -> pd.DataFrame:
         all_sales = all_sales.fillna(0)
         return all_sales
 
-    total_sales = get_asin_sales(amazon_sales, asin_isr)
+    total_sales = get_asin_sales(amazon_sales, asin_isr, include_events=include_events)
     # result = pd.merge(asin_isr, total_sales, on="asin", how="outer")
     # result["in-stock-rate"] = result["in-stock-rate"].fillna(0)
     # result["unit_sales"] = result["unit_sales"].fillna(0)
@@ -322,4 +321,4 @@ def calculate_restock() -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    calculate_restock()
+    calculate_restock(include_events=True)

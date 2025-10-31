@@ -1,12 +1,35 @@
 import datetime
 from typing import Literal
+import pandas as pd
 
+from common import event_dates
 
 current_year, current_month, current_day = (
     datetime.datetime.now().year,
     datetime.datetime.now().month,
     datetime.datetime.now().day,
 )
+
+
+def get_last_non_event_days(
+    num_days: int, max_date: datetime.date, include_events: bool = False
+):
+    """Get the last `num_days` non-event dates before `max_date`."""
+    event_dates_list = [
+        date for event_date_range in event_dates.values() for date in event_date_range
+    ]
+
+    full_date_range = (
+        pd.date_range(start="2020-01-01", end=max_date).to_pydatetime().tolist()
+    )
+    if include_events:
+        return sorted(full_date_range)[-num_days:]
+    non_event_dates = []
+    for single_date in full_date_range:
+        if single_date.date() not in event_dates_list:
+            non_event_dates.append(single_date.date())
+
+    return sorted(non_event_dates)[-num_days:]
 
 
 def get_month_day(
