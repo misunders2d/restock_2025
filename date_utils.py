@@ -99,7 +99,7 @@ def get_event_days_delta():
     nearest_event = min(distances, key=distances.get)  # type: ignore
     days_to_event = (
         datetime.date(
-            year=current_year,
+            year=current_year if current_month < 12 else current_year + 1,
             month=events[nearest_event]["month"],
             day=events[nearest_event]["day"],
         )

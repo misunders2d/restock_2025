@@ -1,6 +1,8 @@
 from connectors import gcloud as gc
 import pandas as pd
 import os
+import numpy as np
+
 from utils import mellanni_modules as mm
 from restock_utils import calculate_inventory_isr, get_asin_sales
 from connectors import gdrive as gd
@@ -24,34 +26,43 @@ def get_event_spreadsheet(
     if event == "BFCM":
         columns_to_return = [
             "ASIN",
-            "sku",
             "Average BFCM sales, units (1 day)",
             "Best BFCM performance",
         ]
     elif event == "BSS":
         columns_to_return = [
             "ASIN",
-            "sku",
             "Average BSS sales, units (1 day)",
             "Best BSS performance",
         ]
     elif event == "PD":
         columns_to_return = [
             "ASIN",
-            "sku",
             "Average PD sales, units (1 day)",
             "Best PD performance",
         ]
     elif event == "PBDD":
         columns_to_return = [
             "ASIN",
-            "sku",
             "Average PBDD sales, units (1 day)",
             "Best PBDD performance",
         ]
     else:
         columns_to_return = spreadsheet.columns.tolist()
     spreadsheet = spreadsheet[columns_to_return]
+    spreadsheet = spreadsheet.rename(
+        columns={
+            "ASIN": "asin",
+            f"Average {event} sales, units (1 day)": "average event sales 1 day",
+            f"Best {event} performance": "best event performance",
+        }
+    )
+    spreadsheet.loc[
+        spreadsheet["average event sales 1 day"] == "", "average event sales 1 day"
+    ] = 0
+    spreadsheet.loc[
+        spreadsheet["best event performance"] == "", "best event performance"
+    ] = 0
     return spreadsheet
 
 
@@ -243,6 +254,22 @@ def calculate_restock(include_events: bool) -> pd.DataFrame:
         return all_sales
 
     total_sales = get_asin_sales(amazon_sales, asin_isr, include_events=include_events)
+
+    # add event performance
+    nearest_event, days_to_event, event_duration = get_event_days_delta()
+
+    event_df = get_event_spreadsheet(nearest_event)
+
+    forecast = pd.merge(total_sales, event_df, how="left", on="asin", validate="1:1")
+    outside_event_sales = forecast["avg units"] * (days_to_event + 49)
+    during_event_sales = np.where(  # =IF(H2>=3,"more than 3","less than 3")
+        forecast["avg units"] >= 3,  # condition
+        ((forecast["avg units"] * event_duration * forecast["best event performance"]) + (forecast["average event sales 1 day"] * event_duration)) / 2,  # if condition is true # =AVERAGE(J2*4,IF(H2>=3,H2*K2*4))
+        forecast["avg units"] * event_duration * 2,  # if condition is false
+    )
+
+    forecast["total units needed"] = outside_event_sales + during_event_sales
+
     # result = pd.merge(asin_isr, total_sales, on="asin", how="outer")
     # result["in-stock-rate"] = result["in-stock-rate"].fillna(0)
     # result["unit_sales"] = result["unit_sales"].fillna(0)
@@ -314,11 +341,11 @@ def calculate_restock(include_events: bool) -> pd.DataFrame:
     #     ]
     # ]
     mm.export_to_excel(
-        [total_sales], ["restock"], "inventory_restock.xlsx", user_folder
+        [forecast], ["restock"], "inventory_restock.xlsx", user_folder
     )
     mm.open_file_folder(os.path.join(user_folder))
-    return total_sales
+    return forecast
 
 
 if __name__ == "__main__":
-    calculate_restock(include_events=True)
+    calculate_restock(include_events=False)

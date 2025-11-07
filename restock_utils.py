@@ -49,10 +49,10 @@ def get_asin_sales(
 
     sales_max_date = amazon_sales["date"].max() - pd.Timedelta(days=1)
     non_event_days = get_last_non_event_days(
-        num_days=180, max_date=sales_max_date, include_events=True
+        num_days=180, max_date=sales_max_date, include_events=include_events
     )
     non_event_days_14 = get_last_non_event_days(
-        num_days=14, max_date=sales_max_date, include_events=True
+        num_days=14, max_date=sales_max_date, include_events=include_events
     )
 
     amazon_sales = amazon_sales[amazon_sales["date"].isin(non_event_days)]
