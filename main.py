@@ -13,6 +13,9 @@ from date_utils import get_event_days_delta
 
 user_folder = os.path.join(os.path.expanduser("~"), "temp")
 os.makedirs(user_folder, exist_ok=True)
+
+STANDARD_DAYS_OF_SALE = 49
+
 days_of_sale = 49
 results = dict()
 
@@ -260,13 +263,17 @@ def calculate_restock(include_events: bool) -> pd.DataFrame:
 
     event_df = get_event_spreadsheet(nearest_event)
 
-    forecast = pd.merge(total_sales, event_df, how="left", on="asin", validate="1:1")
-    outside_event_sales = forecast["avg units"] * (days_to_event + 49)
+    forecast = pd.merge(total_sales, event_df, how="left", on="asin", validate="1:1").fillna(0)
+    outside_event_sales = forecast["avg units"] * (days_to_event + STANDARD_DAYS_OF_SALE)
     during_event_sales = np.where(  # =IF(H2>=3,"more than 3","less than 3")
         forecast["avg units"] >= 3,  # condition
         ((forecast["avg units"] * event_duration * forecast["best event performance"]) + (forecast["average event sales 1 day"] * event_duration)) / 2,  # if condition is true # =AVERAGE(J2*4,IF(H2>=3,H2*K2*4))
         forecast["avg units"] * event_duration * 2,  # if condition is false
     )
+
+    forecast['event_forecasted_sales'] =  forecast["avg units"] * event_duration * 2
+
+
 
     forecast["total units needed"] = outside_event_sales + during_event_sales
 

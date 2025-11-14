@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from date_utils import get_last_non_event_days
 
 
@@ -40,7 +41,7 @@ def calculate_inventory_isr(amazon_inventory):  # done
         asin_isr_long_term, asin_isr_short_term, on="asin", how="outer", validate="1:1"
     )
 
-    return asin_isr
+    return asin_isr.fillna(0)
 
 
 def get_asin_sales(
@@ -63,31 +64,39 @@ def get_asin_sales(
     long_term_sales = (
         amazon_sales.groupby("asin")
         .agg({"unit_sales": "sum", "dollar_sales": "sum"})
-        .reset_index()
+        .reset_index().fillna(0)
     )
     short_term_sales = (
         latest_sales.groupby("asin")
         .agg({"unit_sales": "sum", "dollar_sales": "sum"})
-        .reset_index()
+        .reset_index().fillna(0)
     )
     long_term_sales = pd.merge(
         long_term_sales, asin_isr, how="left", on="asin", validate="1:1"
-    )
+    ).fillna(0)
     short_term_sales = pd.merge(
         short_term_sales, asin_isr, how="left", on="asin", validate="1:1"
-    )
+    ).fillna(0)
 
     long_term_sales["avg sales dollar, 180 days"] = (
-        long_term_sales["dollar_sales"] / 180 / long_term_sales["ISR"]
+        long_term_sales["dollar_sales"]
+        / 180
+        / long_term_sales["ISR"].replace(0, np.nan)
     ).round(2)
     long_term_sales["avg sales units, 180 days"] = (
-        long_term_sales["unit_sales"] / 180 / long_term_sales["ISR"]
+        long_term_sales["unit_sales"]
+        / 180
+        / long_term_sales["ISR"].replace(0, np.nan)
     ).round(2)
     short_term_sales["avg sales dollar, 14 days"] = (
-        short_term_sales["dollar_sales"] / 14 / short_term_sales["ISR_short"]
+        short_term_sales["dollar_sales"]
+        / 14
+        / short_term_sales["ISR_short"].replace(0, np.nan)
     ).round(2)
     short_term_sales["avg sales units, 14 days"] = (
-        short_term_sales["unit_sales"] / 14 / short_term_sales["ISR_short"]
+        short_term_sales["unit_sales"]
+        / 14
+        / short_term_sales["ISR_short"].replace(0, np.nan)
     ).round(2)
 
     total_sales = pd.merge(
@@ -116,5 +125,9 @@ def get_asin_sales(
         (0.6 * total_sales["avg sales dollar, 14 days"])
         + (0.4 * total_sales["avg sales dollar, 180 days"])
     ).round(2)
+
+    total_sales = total_sales.replace("NaN", 0)
+    total_sales = total_sales.replace([np.inf, -np.inf], 0)
+    total_sales = total_sales.fillna(0)
 
     return total_sales
