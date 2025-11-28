@@ -1,15 +1,23 @@
 import pandas as pd
 import numpy as np
-from date_utils import get_last_non_event_days
+from date_utils import get_last_non_event_days, events
+from typing import Literal
 
 
-def calculate_inventory_isr(amazon_inventory):  # done
+def calculate_inventory_isr(
+    amazon_inventory: pd.DataFrame, inv_max_date: str | None = None
+):  # done
 
-    inv_max_date = amazon_inventory["date"].max()
+    if not inv_max_date:
+        inv_max_date = amazon_inventory["date"].max()
+    else:
+        inv_max_date = pd.to_datetime(inv_max_date).date()
 
     inventory_grouped: pd.DataFrame = (
         amazon_inventory.groupby(["date", "asin"]).agg("sum").reset_index()
     )
+
+    inventory_grouped = inventory_grouped[(inventory_grouped["date"] <= inv_max_date)]
 
     inventory_grouped["in-stock-rate"] = inventory_grouped["amz_inventory"] > 0
 
@@ -45,31 +53,40 @@ def calculate_inventory_isr(amazon_inventory):  # done
 
 
 def get_asin_sales(
-    amazon_sales: pd.DataFrame, asin_isr: pd.DataFrame, include_events: bool = False
+    amazon_sales: pd.DataFrame,
+    asin_isr: pd.DataFrame,
+    include_events: bool = False,
+    sales_max_date: str | None = None,
+    long_term_days: int = 180,
+    short_term_days: int = 14,
 ):
-
-    sales_max_date = amazon_sales["date"].max() - pd.Timedelta(days=1)
+    if not sales_max_date:
+        sales_max_date = (amazon_sales["date"].max() - pd.Timedelta(days=1)).date()
+    else:
+        sales_max_date = pd.to_datetime(sales_max_date).date()
     non_event_days = get_last_non_event_days(
-        num_days=180, max_date=sales_max_date, include_events=include_events
+        num_days=long_term_days, max_date=sales_max_date, include_events=include_events
     )
-    non_event_days_14 = get_last_non_event_days(
-        num_days=14, max_date=sales_max_date, include_events=include_events
+    non_event_days_short = get_last_non_event_days(
+        num_days=short_term_days, max_date=sales_max_date, include_events=include_events
     )
 
     amazon_sales = amazon_sales[amazon_sales["date"].isin(non_event_days)]
     amazon_sales = amazon_sales.fillna(0)
 
-    latest_sales = amazon_sales[amazon_sales["date"].isin(non_event_days_14)]
+    latest_sales = amazon_sales[amazon_sales["date"].isin(non_event_days_short)]
 
     long_term_sales = (
         amazon_sales.groupby("asin")
         .agg({"unit_sales": "sum", "dollar_sales": "sum"})
-        .reset_index().fillna(0)
+        .reset_index()
+        .fillna(0)
     )
     short_term_sales = (
         latest_sales.groupby("asin")
         .agg({"unit_sales": "sum", "dollar_sales": "sum"})
-        .reset_index().fillna(0)
+        .reset_index()
+        .fillna(0)
     )
     long_term_sales = pd.merge(
         long_term_sales, asin_isr, how="left", on="asin", validate="1:1"
@@ -78,24 +95,24 @@ def get_asin_sales(
         short_term_sales, asin_isr, how="left", on="asin", validate="1:1"
     ).fillna(0)
 
-    long_term_sales["avg sales dollar, 180 days"] = (
+    long_term_sales[f"avg sales dollar, {long_term_days} days"] = (
         long_term_sales["dollar_sales"]
-        / 180
+        / long_term_days
         / long_term_sales["ISR"].replace(0, np.nan)
     ).round(2)
-    long_term_sales["avg sales units, 180 days"] = (
+    long_term_sales[f"avg sales units, {long_term_days} days"] = (
         long_term_sales["unit_sales"]
-        / 180
+        / long_term_days
         / long_term_sales["ISR"].replace(0, np.nan)
     ).round(2)
-    short_term_sales["avg sales dollar, 14 days"] = (
+    short_term_sales[f"avg sales dollar, {short_term_days} days"] = (
         short_term_sales["dollar_sales"]
-        / 14
+        / short_term_days
         / short_term_sales["ISR_short"].replace(0, np.nan)
     ).round(2)
-    short_term_sales["avg sales units, 14 days"] = (
+    short_term_sales[f"avg sales units, {short_term_days} days"] = (
         short_term_sales["unit_sales"]
-        / 14
+        / short_term_days
         / short_term_sales["ISR_short"].replace(0, np.nan)
     ).round(2)
 
@@ -105,12 +122,16 @@ def get_asin_sales(
                 "asin",
                 "ISR",
                 "ISR_short",
-                "avg sales dollar, 14 days",
-                "avg sales units, 14 days",
+                f"avg sales dollar, {short_term_days} days",
+                f"avg sales units, {short_term_days} days",
             ]
         ],
         long_term_sales[
-            ["asin", "avg sales dollar, 180 days", "avg sales units, 180 days"]
+            [
+                "asin",
+                f"avg sales dollar, {long_term_days} days",
+                f"avg sales units, {long_term_days} days",
+            ]
         ],
         on="asin",
         how="outer",
@@ -118,12 +139,12 @@ def get_asin_sales(
     ).fillna(0)
 
     total_sales["avg units"] = (
-        (0.6 * total_sales["avg sales units, 14 days"])
-        + (0.4 * total_sales["avg sales units, 180 days"])
+        (0.6 * total_sales[f"avg sales units, {short_term_days} days"])
+        + (0.4 * total_sales[f"avg sales units, {long_term_days} days"])
     ).round(2)
     total_sales["avg $"] = (
-        (0.6 * total_sales["avg sales dollar, 14 days"])
-        + (0.4 * total_sales["avg sales dollar, 180 days"])
+        (0.6 * total_sales[f"avg sales dollar, {short_term_days} days"])
+        + (0.4 * total_sales[f"avg sales dollar, {long_term_days} days"])
     ).round(2)
 
     total_sales = total_sales.replace("NaN", 0)
@@ -131,3 +152,122 @@ def get_asin_sales(
     total_sales = total_sales.fillna(0)
 
     return total_sales
+
+
+def filter_event_spreadsheet(
+    full_spreadsheet: pd.DataFrame,
+    event: Literal["BFCM", "BSS", "PD", "PBDD"],
+) -> pd.DataFrame | None:
+    try:
+        match event:
+            case "BFCM":
+                columns_to_return = [
+                    "ASIN",
+                    "Average BFCM sales, units (1 day)",
+                    "Best BFCM performance",
+                ]
+            case "BSS":
+                columns_to_return = [
+                    "ASIN",
+                    "Average BSS sales, units (1 day)",
+                    "Best BSS performance",
+                ]
+            case "PD":
+                columns_to_return = [
+                    "ASIN",
+                    "Average PD sales, units (1 day)",
+                    "Best PD performance",
+                ]
+            case "PBDD":
+                columns_to_return = [
+                    "ASIN",
+                    "Average PBDD sales, units (1 day)",
+                    "Best PBDD performance",
+                ]
+
+        spreadsheet = full_spreadsheet[columns_to_return].copy()
+        spreadsheet = spreadsheet.rename(
+            columns={
+                "ASIN": "asin",
+                # f"Average {event} sales, units (1 day)": ,
+                # f"Best {event} performance": "best event performance","average event sales 1 day"
+            }
+        )
+        spreadsheet.loc[
+            spreadsheet[f"Average {event} sales, units (1 day)"] == "",
+            f"Average {event} sales, units (1 day)",
+        ] = 0
+        spreadsheet.loc[
+            spreadsheet[f"Best {event} performance"] == "",
+            f"Best {event} performance",
+        ] = 0
+
+        return spreadsheet
+    except Exception as e:
+        raise BaseException(f"Error happened: {e}")
+
+
+def calculate_event_forecast(
+    total_sales: pd.DataFrame,
+    full_event_df: pd.DataFrame,
+    event: Literal["BFCM", "BSS", "PD", "PBDD"],
+):
+
+    # verify that total_sales contains "asin" and "avg units" columns
+    sales_cols = total_sales.columns
+    if "asin" not in sales_cols or "avg units" not in sales_cols:
+        raise BaseException(
+            "total_sales dataframe MUST contain `asin` and `avg units` columns"
+        )
+
+    event_df = filter_event_spreadsheet(full_spreadsheet=full_event_df, event=event)
+    event_duration = events[event]["duration"]
+
+    forecast = pd.merge(
+        total_sales, event_df, how="left", on="asin", validate="1:1"
+    ).fillna(0)
+    # during_event_sales = np.where(  # =IF(H2>=3,"more than 3","less than 3")
+    #     forecast["avg units"] >= 3,  # condition
+    #     (
+    #         (
+    #             forecast["avg units"]
+    #             * event_duration
+    #             * forecast["best event performance"]
+    #         )
+    #         + (forecast["average event sales 1 day"] * event_duration)
+    #     )
+    #     / 2,  # if condition is true # =AVERAGE(J2*4,IF(H2>=3,H2*K2*4))
+    #     forecast["avg units"] * event_duration * 2,  # if condition is false
+    # )
+
+    strong_performance = (
+        forecast["avg units"] * event_duration * forecast[f"Best {event} performance"]
+    )
+    poor_performance = forecast["avg units"] * event_duration * 2
+    average_event_performance = (
+        forecast[f"Average {event} sales, units (1 day)"] * event_duration
+    )
+
+    forecast[f"{event}_forecasted_sales"] = (
+        average_event_performance + poor_performance
+    ) / 2
+
+    forecast.loc[forecast["avg units"] >= 3, f"{event}_forecasted_sales"] = (
+        average_event_performance + strong_performance
+    ) / 2
+
+    return forecast[
+        [
+            "asin",
+            f"Average {event} sales, units (1 day)",
+            f"Best {event} performance",
+            f"{event}_forecasted_sales",
+        ]
+    ]
+
+
+def calculate_amazon_inventory(amazon_inventory: pd.DataFrame):
+    max_date = amazon_inventory['date'].max()
+    last_inventory = amazon_inventory[amazon_inventory['date'] == max_date]
+    last_inventory = last_inventory.groupby('asin').agg({"amz_inventory":'sum'}).reset_index()
+    return last_inventory

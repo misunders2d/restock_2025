@@ -11,27 +11,6 @@ current_year, current_month, current_day = (
 )
 
 
-def get_last_non_event_days(
-    num_days: int, max_date: datetime.date, include_events: bool = False
-):
-    """Get the last `num_days` non-event dates before `max_date`."""
-    event_dates_list = [
-        date for event_date_range in event_dates.values() for date in event_date_range
-    ]
-
-    full_date_range = (
-        pd.date_range(start="2020-01-01", end=max_date).to_pydatetime().tolist()
-    )
-    if include_events:
-        return sorted(full_date_range)[-num_days:]
-    non_event_dates = []
-    for single_date in full_date_range:
-        if single_date.date() not in event_dates_list:
-            non_event_dates.append(single_date.date())
-
-    return sorted(non_event_dates)[-num_days:]
-
-
 def get_month_day(
     month: int,
     year: int,
@@ -70,18 +49,40 @@ def get_month_day(
     return target_date.day
 
 
-def get_event_days_delta():
+events = {
+    "BSS": {"month": 3, "day": 20, "duration": 2},
+    "PD": {"month": 7, "day": 10, "duration": 4},
+    "PBDD": {"month": 10, "day": 7, "duration": 2},
+    "BFCM": {
+        "month": 11,
+        "day": get_month_day(11, current_year, 4, order="last"),
+        "duration": 4,
+    },  # Last Friday in November
+}
 
-    events = {
-        "BSS": {"month": 3, "day": 20, "duration": 2},
-        "PD": {"month": 7, "day": 10, "duration": 4},
-        "PBDD": {"month": 10, "day": 7, "duration": 2},
-        "BFCM": {
-            "month": 11,
-            "day": get_month_day(11, current_year, 4, order="last"),
-            "duration": 4,
-        },  # Last Friday in November
-    }
+
+def get_last_non_event_days(
+    num_days: int, max_date: datetime.date, include_events: bool = False
+):
+    """Get the last `num_days` non-event dates before `max_date`."""
+    event_dates_list = [
+        date for event_date_range in event_dates.values() for date in event_date_range
+    ]
+
+    full_date_range = (
+        pd.date_range(start="2020-01-01", end=max_date).to_pydatetime().tolist()
+    )
+    if include_events:
+        return sorted(full_date_range)[-num_days:]
+    non_event_dates = []
+    for single_date in full_date_range:
+        if single_date.date() not in event_dates_list:
+            non_event_dates.append(single_date.date())
+
+    return sorted(non_event_dates)[-num_days:]
+
+
+def get_event_days_delta():
 
     distances = {}
     for event, date in events.items():
@@ -99,7 +100,12 @@ def get_event_days_delta():
     nearest_event = min(distances, key=distances.get)  # type: ignore
     days_to_event = (
         datetime.date(
-            year=current_year if current_month < 12 else current_year + 1,
+            year=(
+                current_year
+                if (current_month, current_day)
+                < (events["BFCM"]["month"], events["BFCM"]["day"])
+                else current_year + 1
+            ),
             month=events[nearest_event]["month"],
             day=events[nearest_event]["day"],
         )
