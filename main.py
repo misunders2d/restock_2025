@@ -8,7 +8,7 @@ from restock_utils import (
     calculate_inventory_isr,
     get_asin_sales,
     calculate_event_forecast,
-    calculate_amazon_inventory
+    calculate_amazon_inventory,
 )
 from db_utils import pull_data
 from date_utils import get_event_days_delta
@@ -19,7 +19,9 @@ user_folder = os.path.join(os.path.expanduser("~"), "temp")
 os.makedirs(user_folder, exist_ok=True)
 
 
-def calculate_restock(include_events: bool, num_days: int = 180) -> pd.DataFrame:
+def calculate_restock(
+    include_events: bool, num_days: int = 180, max_date: str | None = None
+):
     """
     Ruslan
     1. calculate in-stock-rate for the period (amz_inventory)
@@ -30,7 +32,7 @@ def calculate_restock(include_events: bool, num_days: int = 180) -> pd.DataFrame
         asin, average_sales_180, average_sales_14, average_combined, isr, amz_inventory (latest), wh_inventory (latest), units_to_ship
     """
 
-    results = pull_data(num_days=num_days)
+    results = pull_data(num_days=num_days, max_date=max_date)
 
     amazon_sales = results["get_amazon_sales"]
     amazon_sales["date"] = pd.to_datetime(amazon_sales["date"])
@@ -67,43 +69,65 @@ def calculate_restock(include_events: bool, num_days: int = 180) -> pd.DataFrame
         calculated_days_to_event + STANDARD_DAYS_OF_SALE
     )
 
-    total_units_needed = outside_event_sales if days_to_event > 90 else outside_event_sales + forecast[f"{nearest_event}_forecasted_sales"]
+    total_units_needed = (
+        outside_event_sales
+        if days_to_event > 90
+        else outside_event_sales + forecast[f"{nearest_event}_forecasted_sales"]
+    )
     forecast["total units needed"] = total_units_needed
 
     asin_inventory = calculate_amazon_inventory(amazon_inventory)
 
-    forecast = pd.merge(forecast, asin_inventory, how = 'left', on = 'asin', validate = '1:1').fillna(0)
+    forecast = pd.merge(
+        forecast, asin_inventory, how="left", on="asin", validate="1:1"
+    ).fillna(0)
 
-    forecast['to_ship_units'] = (forecast['total units needed'] - forecast['amz_inventory']).clip(0)
+    forecast["to_ship_units"] = (
+        forecast["total units needed"] - forecast["amz_inventory"]
+    ).clip(0)
 
-    dimensions = size_match.main(out = False)
-    dimensions = dimensions[['asin','sets in a box']]
-    dimensions = dimensions.drop_duplicates('asin')
-    forecast = pd.merge(forecast, dimensions, how = 'left', on = 'asin', validate='1:1')
-    forecast['to_ship_boxes'] = (forecast['to_ship_units'] / forecast['sets in a box']).round(0)
+    dimensions = size_match.main(out=False)
+    dimensions = dimensions[["asin", "sets in a box"]]
+    dimensions = dimensions.drop_duplicates("asin")
+    forecast = pd.merge(forecast, dimensions, how="left", on="asin", validate="1:1")
+    forecast["to_ship_boxes"] = (
+        forecast["to_ship_units"] / forecast["sets in a box"]
+    ).round(0)
 
-    dictionary_obj = gd.download_file(file_id = '1RzO_OLIrvgtXYeGUncELyFgG-jJdCheB')
+    dictionary_obj = gd.download_file(file_id="1RzO_OLIrvgtXYeGUncELyFgG-jJdCheB")
     dictionary = pd.read_excel(dictionary_obj)
     dictionary.columns = [x.lower() for x in dictionary.columns]
-    dictionary = dictionary[['sku','asin', 'life stage', 'restockable']]
+    dictionary = dictionary[["sku", "asin", "life stage", "restockable"]]
 
-    wh_inventory = pd.merge(wh_inventory, dictionary[['sku','asin','life stage', 'restockable']], how = 'left', on = 'sku', validate = '1:1')
-    asin_wh_inventory = wh_inventory.groupby('asin').agg(
-        {
-            "wh_inventory":"sum",
-            "incoming_containers":"sum",
-            "sku":lambda x: ', '.join(x.unique()),
-            "life stage":lambda x: ', '.join(x.unique()),
-            "restockable":lambda x: ', '.join(x.unique())
-        }
-        ).reset_index()
-    
-    forecast = pd.merge(forecast, asin_wh_inventory, how = 'outer', on = 'asin', validate = '1:1')
+    wh_inventory = pd.merge(
+        wh_inventory,
+        dictionary[["sku", "asin", "life stage", "restockable"]],
+        how="left",
+        on="sku",
+        validate="1:1",
+    )
+    asin_wh_inventory = (
+        wh_inventory.groupby("asin")
+        .agg(
+            {
+                "wh_inventory": "sum",
+                "incoming_containers": "sum",
+                "sku": lambda x: ", ".join(x.unique()),
+                "life stage": lambda x: ", ".join(x.unique()),
+                "restockable": lambda x: ", ".join(x.unique()),
+            }
+        )
+        .reset_index()
+    )
+
+    forecast = pd.merge(
+        forecast, asin_wh_inventory, how="outer", on="asin", validate="1:1"
+    )
 
     mm.export_to_excel([forecast], ["restock"], "inventory_restock.xlsx", user_folder)
     mm.open_file_folder(os.path.join(user_folder))
-    return forecast
+    return forecast, results
 
 
 if __name__ == "__main__":
-    calculate_restock(include_events=False, num_days=180)
+    forecast, results = calculate_restock(include_events=False, num_days=180)

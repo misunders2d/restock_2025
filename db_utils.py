@@ -50,7 +50,7 @@ def get_amazon_sales(
         FROM
             `mellanni-project-da.reports.all_orders`
         WHERE
-            CAST(purchase_date AS DATE) BETWEEN DATE_SUB({MAX_DATE}, INTERVAL {num_days + 90} DAY) AND CURRENT_DATE()
+            CAST(purchase_date AS DATE) BETWEEN DATE_SUB({MAX_DATE}, INTERVAL {num_days + 90} DAY) AND {MAX_DATE}
             AND sales_channel = 'Amazon.com'
         GROUP BY
             1, 2
@@ -94,7 +94,7 @@ def get_amazon_inventory(
             `mellanni-project-da.reports.fba_inventory_planning`
         WHERE
             marketplace = 'US'
-            AND DATE(snapshot_date) BETWEEN DATE_SUB({MAX_DATE}, INTERVAL {num_days} DAY) AND CURRENT_DATE()
+            AND DATE(snapshot_date) BETWEEN DATE_SUB({MAX_DATE}, INTERVAL {num_days} DAY) AND {MAX_DATE}
         ORDER BY
             date DESC, sku ASC
     """
@@ -181,15 +181,57 @@ def get_wh_inventory(output: dict, to_print: bool = False) -> pd.DataFrame | Non
         raise BaseException(f"error happened: {e}")
 
 
-def pull_data(num_days):
+def get_dictionary(output: dict, to_print: bool = False) -> pd.DataFrame | None:
+    try:
+        if to_print:
+            print("Starting to run `get_dictionary`")
+        dictionary_obj = gd.download_file(file_id="1RzO_OLIrvgtXYeGUncELyFgG-jJdCheB")
+        dictionary = pd.read_excel(
+            dictionary_obj,
+            usecols=[
+                "SKU",
+                "ASIN",
+                "Collection",
+                "Size",
+                "Color",
+                "Actuality",
+                "Life stage",
+                "Restockable",
+            ],
+        )
+        dictionary.columns = [x.lower() for x in dictionary.columns]
+        output["get_dictionary"] = dictionary
+        if to_print:
+            print("Saved data to results `get_dictionary`")
+        return dictionary
+    except Exception as e:
+        raise BaseException(f"error happened: {e}")
+
+
+def pull_data(num_days, max_date=None):
     results = dict()
+    date_kwargs = {"to_print": True, "output": results, "num_days": num_days}
+    if max_date:
+        date_kwargs["max_date"] = max_date
+    kwargs = {"to_print": True, "output": results}
 
     threads = []
-    threads.append(threading.Thread(target=get_amazon_sales,kwargs={"to_print": True, "output": results, "num_days": num_days},))
-    threads.append(threading.Thread(target=get_wh_inventory, kwargs={"to_print": True, "output": results}))
-    threads.append(threading.Thread(target=get_amazon_inventory,kwargs={"to_print": True, "output": results, "num_days": num_days},))
-    threads.append(threading.Thread(target=get_event_spreadsheet, kwargs={"to_print": True, "output": results}))
-    
+    threads.append(
+        threading.Thread(
+            target=get_amazon_sales,
+            kwargs=date_kwargs,
+        )
+    )
+    threads.append(threading.Thread(target=get_wh_inventory, kwargs=kwargs))
+    threads.append(
+        threading.Thread(
+            target=get_amazon_inventory,
+            kwargs=date_kwargs,
+        )
+    )
+    threads.append(threading.Thread(target=get_event_spreadsheet, kwargs=kwargs))
+
+    threads.append(threading.Thread(target=get_dictionary, kwargs=kwargs))
     for thread in threads:
         thread.start()
     for thread in threads:

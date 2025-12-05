@@ -163,25 +163,25 @@ def filter_event_spreadsheet(
             case "BFCM":
                 columns_to_return = [
                     "ASIN",
-                    "Average BFCM sales, units (1 day)",
+                    "Average BFCM sales, units (total)",
                     "Best BFCM performance",
                 ]
             case "BSS":
                 columns_to_return = [
                     "ASIN",
-                    "Average BSS sales, units (1 day)",
+                    "Average BSS sales, units (total)",
                     "Best BSS performance",
                 ]
             case "PD":
                 columns_to_return = [
                     "ASIN",
-                    "Average PD sales, units (1 day)",
+                    "Average PD sales, units (total)",
                     "Best PD performance",
                 ]
             case "PBDD":
                 columns_to_return = [
                     "ASIN",
-                    "Average PBDD sales, units (1 day)",
+                    "Average PBDD sales, units (total)",
                     "Best PBDD performance",
                 ]
 
@@ -189,13 +189,13 @@ def filter_event_spreadsheet(
         spreadsheet = spreadsheet.rename(
             columns={
                 "ASIN": "asin",
-                # f"Average {event} sales, units (1 day)": ,
+                # f"Average {event} sales, units (total)": ,
                 # f"Best {event} performance": "best event performance","average event sales 1 day"
             }
         )
         spreadsheet.loc[
-            spreadsheet[f"Average {event} sales, units (1 day)"] == "",
-            f"Average {event} sales, units (1 day)",
+            spreadsheet[f"Average {event} sales, units (total)"] == "",
+            f"Average {event} sales, units (total)",
         ] = 0
         spreadsheet.loc[
             spreadsheet[f"Best {event} performance"] == "",
@@ -241,11 +241,11 @@ def calculate_event_forecast(
     # )
 
     strong_performance = (
-        forecast["avg units"] * event_duration * forecast[f"Best {event} performance"]
+        forecast["avg units"] * forecast[f"Best {event} performance"] #* event_duration
     )
     poor_performance = forecast["avg units"] * event_duration * 2
     average_event_performance = (
-        forecast[f"Average {event} sales, units (1 day)"] * event_duration
+        forecast[f"Average {event} sales, units (total)"]# * event_duration
     )
 
     forecast[f"{event}_forecasted_sales"] = (
@@ -259,7 +259,7 @@ def calculate_event_forecast(
     return forecast[
         [
             "asin",
-            f"Average {event} sales, units (1 day)",
+            f"Average {event} sales, units (total)",
             f"Best {event} performance",
             f"{event}_forecasted_sales",
         ]
@@ -267,7 +267,9 @@ def calculate_event_forecast(
 
 
 def calculate_amazon_inventory(amazon_inventory: pd.DataFrame):
-    max_date = amazon_inventory['date'].max()
-    last_inventory = amazon_inventory[amazon_inventory['date'] == max_date]
-    last_inventory = last_inventory.groupby('asin').agg({"amz_inventory":'sum'}).reset_index()
+    max_date = amazon_inventory["date"].max()
+    last_inventory = amazon_inventory[amazon_inventory["date"] == max_date]
+    last_inventory = (
+        last_inventory.groupby("asin").agg({"amz_inventory": "sum"}).reset_index()
+    )
     return last_inventory

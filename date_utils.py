@@ -113,3 +113,19 @@ def get_event_days_delta():
     ).days
 
     return nearest_event, days_to_event, events[nearest_event]["duration"]
+
+
+def is_event(year, month, day):
+    future_event_dates = {
+        key: pd.date_range(
+            start=pd.to_datetime(f"{year}-{value['month']}-{value['day']}").date(),
+            periods=value["duration"],
+        )
+        .to_pydatetime()
+        .tolist()
+        for key, value in events.items()
+    }
+    for event in future_event_dates:
+        if (month, day) in ((x.month, x.day) for x in future_event_dates[event]):
+            return event
+    return False
