@@ -86,6 +86,9 @@ def calculate_restock(
         forecast["total units needed"] - forecast["amz_inventory"]
     ).clip(0)
 
+    forecast['dos_available'] = forecast["amz_available"] / forecast['avg units']
+    forecast['dos_inbound'] = forecast["amz_inventory"] / forecast['avg units']
+
     dimensions = size_match.main(out=False)
     dimensions = dimensions[["asin", "sets in a box"]]
     dimensions = dimensions.drop_duplicates("asin")
@@ -94,14 +97,15 @@ def calculate_restock(
         forecast["to_ship_units"] / forecast["sets in a box"]
     ).round(0)
 
-    dictionary_obj = gd.download_file(file_id="1RzO_OLIrvgtXYeGUncELyFgG-jJdCheB")
-    dictionary = pd.read_excel(dictionary_obj)
-    dictionary.columns = [x.lower() for x in dictionary.columns]
-    dictionary = dictionary[["sku", "asin", "life stage", "restockable"]]
+    dictionary = results['get_dictionary']
+    # dictionary_obj = gd.download_file(file_id="1RzO_OLIrvgtXYeGUncELyFgG-jJdCheB")
+    # dictionary = pd.read_excel(dictionary_obj)
+    dictionary.columns = [x.lower().strip() for x in dictionary.columns]
+    dictionary = dictionary[["sku", "asin", "life stage", "restockable", "collection","size","color"]]
 
     wh_inventory = pd.merge(
         wh_inventory,
-        dictionary[["sku", "asin", "life stage", "restockable"]],
+        dictionary,
         how="left",
         on="sku",
         validate="1:1",
@@ -115,6 +119,10 @@ def calculate_restock(
                 "sku": lambda x: ", ".join(x.unique()),
                 "life stage": lambda x: ", ".join(x.unique()),
                 "restockable": lambda x: ", ".join(x.unique()),
+                "collection": lambda x: ", ".join(x.unique()),
+                "size": lambda x: ", ".join(x.unique()),
+                "color": lambda x: ", ".join(x.unique()),
+
             }
         )
         .reset_index()
@@ -131,3 +139,7 @@ def calculate_restock(
 
 if __name__ == "__main__":
     forecast, results = calculate_restock(include_events=False, num_days=180)
+
+
+
+# TODO think about limiting the number of days to account for depending on the event 

@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from datetime import timedelta
 from date_utils import get_last_non_event_days, events
 from typing import Literal
 
@@ -268,8 +269,8 @@ def calculate_event_forecast(
 
 def calculate_amazon_inventory(amazon_inventory: pd.DataFrame):
     max_date = amazon_inventory["date"].max()
-    last_inventory = amazon_inventory[amazon_inventory["date"] == max_date]
+    last_inventory = amazon_inventory[amazon_inventory["date"] >= max_date-timedelta(days=2)]
     last_inventory = (
-        last_inventory.groupby("asin").agg({"amz_inventory": "sum"}).reset_index()
+        last_inventory.groupby("asin").agg({"amz_inventory": "sum","amz_available":"sum"}).reset_index()
     )
     return last_inventory
