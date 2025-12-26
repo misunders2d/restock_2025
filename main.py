@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+from tkinter import messagebox
 
 from connectors import gdrive as gd
 from utils import mellanni_modules as mm
@@ -14,6 +15,7 @@ from db_utils import pull_data
 from date_utils import get_event_days_delta
 
 STANDARD_DAYS_OF_SALE = 49
+
 
 user_folder = os.path.join(os.path.expanduser("~"), "temp")
 os.makedirs(user_folder, exist_ok=True)
@@ -54,6 +56,38 @@ def calculate_restock(
 
     nearest_event, days_to_event, event_duration = get_event_days_delta()
 
+    HARD_COLUMNS = [
+        "asin",
+        "ISR",
+        "ISR_short",
+        "avg sales dollar, 14 days",
+        "avg sales units, 14 days",
+        "avg sales dollar, 180 days",
+        "avg sales units, 180 days",
+        "avg units",
+        "avg $",
+        "Average BSS sales, units (total)",
+        "Best BSS performance",
+        "BSS_forecasted_sales",
+        "total units needed",
+        "amz_inventory",
+        "amz_available",
+        "to_ship_units",
+        "dos_available",
+        "dos_inbound",
+        "sets in a box",
+        "to_ship_boxes",
+        "dos_shipped",
+        "wh_inventory",
+        "incoming_containers",
+        "sku",
+        "life stage",
+        "restockable",
+        "collection",
+        "size",
+        "color",
+    ]
+
     event_forecast = calculate_event_forecast(
         total_sales=total_sales,
         full_event_df=full_event_spreadsheet,
@@ -83,11 +117,11 @@ def calculate_restock(
     ).fillna(0)
 
     forecast["to_ship_units"] = (
-        forecast["total units needed"] - forecast["amz_inventory"]
-    ).clip(0)
+        (forecast["total units needed"] - forecast["amz_inventory"]).clip(0).round(0)
+    )
 
-    forecast['dos_available'] = forecast["amz_available"] / forecast['avg units']
-    forecast['dos_inbound'] = forecast["amz_inventory"] / forecast['avg units']
+    forecast["dos_available"] = forecast["amz_available"] / forecast["avg units"]
+    forecast["dos_inbound"] = forecast["amz_inventory"] / forecast["avg units"]
 
     dimensions = size_match.main(out=False)
     dimensions = dimensions[["asin", "sets in a box"]]
@@ -97,11 +131,16 @@ def calculate_restock(
         forecast["to_ship_units"] / forecast["sets in a box"]
     ).round(0)
 
-    dictionary = results['get_dictionary']
+    # forecast['dos_shipped'] = (forecast['to_ship_boxes'] * forecast['sets in a box'] + forecast['amz_inventory'])/ forecast["avg units"]
+    forecast["dos_shipped"] = "=(T:T*S:S+N:N)/H:H"
+
+    dictionary = results["get_dictionary"]
     # dictionary_obj = gd.download_file(file_id="1RzO_OLIrvgtXYeGUncELyFgG-jJdCheB")
     # dictionary = pd.read_excel(dictionary_obj)
     dictionary.columns = [x.lower().strip() for x in dictionary.columns]
-    dictionary = dictionary[["sku", "asin", "life stage", "restockable", "collection","size","color"]]
+    dictionary = dictionary[
+        ["sku", "asin", "life stage", "restockable", "collection", "size", "color"]
+    ]
 
     wh_inventory = pd.merge(
         wh_inventory,
@@ -116,13 +155,12 @@ def calculate_restock(
             {
                 "wh_inventory": "sum",
                 "incoming_containers": "sum",
-                "sku": lambda x: ", ".join(x.unique()),
-                "life stage": lambda x: ", ".join(x.unique()),
-                "restockable": lambda x: ", ".join(x.unique()),
-                "collection": lambda x: ", ".join(x.unique()),
-                "size": lambda x: ", ".join(x.unique()),
-                "color": lambda x: ", ".join(x.unique()),
-
+                "sku": lambda x: ", ".join(sorted(x.unique())),
+                "life stage": lambda x: ", ".join(sorted(x.unique())),
+                "restockable": lambda x: ", ".join(sorted(x.unique())),
+                "collection": lambda x: ", ".join(sorted(x.unique())),
+                "size": lambda x: ", ".join(sorted(x.unique())),
+                "color": lambda x: ", ".join(sorted(x.unique())),
             }
         )
         .reset_index()
@@ -131,6 +169,24 @@ def calculate_restock(
     forecast = pd.merge(
         forecast, asin_wh_inventory, how="outer", on="asin", validate="1:1"
     )
+
+    forecast[["to_ship_units", "amz_inventory", "wh_inventory"]] = forecast[
+        ["to_ship_units", "amz_inventory", "wh_inventory"]
+    ].fillna(0)
+
+    forecast.loc[
+        (forecast["to_ship_units"] == 0)
+        & (forecast["amz_inventory"] == 0)
+        & (forecast["wh_inventory"] > 0),
+        ["to_ship_units", "to_ship_boxes"],
+    ] = 1
+
+    if not forecast.columns.tolist() == HARD_COLUMNS:
+        # raise BaseException("Columns don't match, don't forget to change Excel formula in 'dos_shipped' column")
+        messagebox.showwarning(
+            title="Warning",
+            message="Columns don't match, don't forget to change Excel formula in 'dos_shipped' column",
+        )
 
     mm.export_to_excel([forecast], ["restock"], "inventory_restock.xlsx", user_folder)
     mm.open_file_folder(os.path.join(user_folder))
@@ -141,5 +197,4 @@ if __name__ == "__main__":
     forecast, results = calculate_restock(include_events=False, num_days=180)
 
 
-
-# TODO think about limiting the number of days to account for depending on the event 
+# TODO think about limiting the number of days to account for depending on the event

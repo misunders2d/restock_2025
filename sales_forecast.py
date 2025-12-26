@@ -70,7 +70,6 @@ def main(stack=False):
     for key, value in averages.items():
         averages[key] = np.mean(value)
 
-
     def get_nearest_date(date):
         print(f"Checking date: {date}")
         month, day = date.month, date.day
@@ -89,7 +88,12 @@ def main(stack=False):
     forecast = current_restock[["asin", "avg units"]].copy()
     forecast["avg price"] = current_restock["avg $"] / current_restock["avg units"]
     wh_inventory = results["get_wh_inventory"]
-    wh_dictionary = results["get_dictionary"][["asin", "sku",]]
+    wh_dictionary = results["get_dictionary"][
+        [
+            "asin",
+            "sku",
+        ]
+    ]
     wh_inventory = pd.merge(
         wh_inventory,
         wh_dictionary,
@@ -97,11 +101,21 @@ def main(stack=False):
         on="sku",
         validate="m:1",
     )
-    wh_inventory = wh_inventory.groupby("asin").agg({"wh_inventory": "sum", "incoming_containers":"sum"}).reset_index()
+    wh_inventory = (
+        wh_inventory.groupby("asin")
+        .agg({"wh_inventory": "sum", "incoming_containers": "sum"})
+        .reset_index()
+    )
     amazon_inventory = results["get_amazon_inventory"]
-    amazon_inventory = amazon_inventory.groupby(['date','asin']).agg({'amz_inventory':'sum'}).reset_index()
+    amazon_inventory = (
+        amazon_inventory.groupby(["date", "asin"])
+        .agg({"amz_inventory": "sum"})
+        .reset_index()
+    )
     amazon_inventory = amazon_inventory.sort_values("date", ascending=False)
-    amazon_inventory = amazon_inventory.groupby('asin').agg({'amz_inventory':'first'}).reset_index()
+    amazon_inventory = (
+        amazon_inventory.groupby("asin").agg({"amz_inventory": "first"}).reset_index()
+    )
 
     total_inventory = pd.merge(
         wh_inventory,
@@ -110,17 +124,31 @@ def main(stack=False):
         on="asin",
         validate="1:1",
     ).fillna(0)
-    total_inventory['total_inventory'] = total_inventory.sum(axis=1, numeric_only=True)
-    forecast = pd.merge(forecast, total_inventory[['asin', 'total_inventory']], how="left", on="asin", validate="1:1").fillna(0)
+    total_inventory["total_inventory"] = total_inventory.sum(axis=1, numeric_only=True)
+    forecast = pd.merge(
+        forecast,
+        total_inventory[["asin", "total_inventory"]],
+        how="left",
+        on="asin",
+        validate="1:1",
+    ).fillna(0)
 
     future_date_range = pd.date_range(
         start=(pd.to_datetime("today")).date(),
         end=(pd.to_datetime("today") + pd.Timedelta(days=500)).date(),
     )
-    life_stage_dictionary = results["get_dictionary"][["asin", "life stage", "restockable"]]
-    life_stage_dictionary = life_stage_dictionary.groupby("asin").agg(lambda x: ", ".join(x.unique())).reset_index()
-    
-    forecast = pd.merge(forecast, life_stage_dictionary, how="left", on="asin", validate="1:1")
+    life_stage_dictionary = results["get_dictionary"][
+        ["asin", "life stage", "restockable"]
+    ]
+    life_stage_dictionary = (
+        life_stage_dictionary.groupby("asin")
+        .agg(lambda x: ", ".join(x.unique()))
+        .reset_index()
+    )
+
+    forecast = pd.merge(
+        forecast, life_stage_dictionary, how="left", on="asin", validate="1:1"
+    )
 
     forecast_dollars = forecast.copy()
 
@@ -144,20 +172,22 @@ def main(stack=False):
                     forecast["avg units"] * averages[get_nearest_date(date)]
                 )
                 forecast["event"] = ""
-            
-            forecast['units'] = forecasted_units
+
+            forecast["units"] = forecasted_units
             forecast.loc[
-                (forecast['restockable'] == "Do not ship to amazon") | 
-                (forecast['life stage']=="Discontinued"),
-                "units"] = forecast[['total_inventory','units']].min(axis = 1)
+                (forecast["restockable"] == "Do not ship to amazon")
+                | (forecast["life stage"] == "Discontinued"),
+                "units",
+            ] = forecast[["total_inventory", "units"]].min(axis=1)
             if not event:
                 forecast["avg units"] = forecast["avg units"] * (179 / 180) + forecast[
                     "units"
                 ] * (1 / 180)
-            forecast['total_inventory'] = forecast['total_inventory'] - forecast['units'].clip(0)
+            forecast["total_inventory"] = forecast["total_inventory"] - forecast[
+                "units"
+            ].clip(0)
 
             forecast["$"] = forecast["units"] * forecast["avg price"]
-
 
             total = pd.concat(
                 [total, forecast[["asin", "date", "event", "units", "$"]]], axis=0

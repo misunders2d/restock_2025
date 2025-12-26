@@ -142,7 +142,7 @@ def get_asin_sales(
     total_sales["avg units"] = (
         (0.6 * total_sales[f"avg sales units, {short_term_days} days"])
         + (0.4 * total_sales[f"avg sales units, {long_term_days} days"])
-    ).round(2)
+    ).round(4)
     total_sales["avg $"] = (
         (0.6 * total_sales[f"avg sales dollar, {short_term_days} days"])
         + (0.4 * total_sales[f"avg sales dollar, {long_term_days} days"])
@@ -242,12 +242,13 @@ def calculate_event_forecast(
     # )
 
     strong_performance = (
-        forecast["avg units"] * forecast[f"Best {event} performance"] #* event_duration
+        forecast["avg units"]
+        * forecast[f"Best {event} performance"]  # * event_duration
     )
     poor_performance = forecast["avg units"] * event_duration * 2
-    average_event_performance = (
-        forecast[f"Average {event} sales, units (total)"]# * event_duration
-    )
+    average_event_performance = forecast[
+        f"Average {event} sales, units (total)"
+    ]  # * event_duration
 
     forecast[f"{event}_forecasted_sales"] = (
         average_event_performance + poor_performance
@@ -269,8 +270,12 @@ def calculate_event_forecast(
 
 def calculate_amazon_inventory(amazon_inventory: pd.DataFrame):
     max_date = amazon_inventory["date"].max()
-    last_inventory = amazon_inventory[amazon_inventory["date"] >= max_date-timedelta(days=2)]
+    last_inventory = amazon_inventory[
+        amazon_inventory["date"] >= max_date - timedelta(days=2)
+    ]
     last_inventory = (
-        last_inventory.groupby("asin").agg({"amz_inventory": "sum","amz_available":"sum"}).reset_index()
+        last_inventory.groupby("asin")
+        .agg({"amz_inventory": "sum", "amz_available": "sum"})
+        .reset_index()
     )
     return last_inventory
