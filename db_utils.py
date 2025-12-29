@@ -2,6 +2,9 @@ import pandas as pd
 from connectors import gdrive as gd
 from connectors import gcloud as gc
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from utils import size_match
 
 EVENT_SPREADSHEET_ID = "1_gSk2xSDuyEQ9qzI15NJBxVCBZSJMuTKS1pDsvnfes8"  # google spreadsheet with events data
 
@@ -233,6 +236,36 @@ def pull_data(num_days, max_date=None):
         date_kwargs["max_date"] = max_date
     kwargs = {"to_print": True, "output": results}
 
+    with ThreadPoolExecutor() as executor:
+        futures = {
+            executor.submit(get_amazon_sales, **date_kwargs): "get_amazon_sales",
+            executor.submit(get_wh_inventory, **kwargs): "get_wh_inventory",
+            executor.submit(
+                get_amazon_inventory, **date_kwargs
+            ): "get_amazon_inventory",
+            executor.submit(get_event_spreadsheet, **kwargs): "get_event_spreadsheet",
+            executor.submit(get_dictionary, **kwargs): "get_dictionary",
+            executor.submit(size_match.main, out=False): "size_match",
+        }
+        for future in as_completed(futures):
+            func_name = futures[future]
+            try:
+                result = future.result()
+                if func_name == "size_match":
+                    print(f"Received {func_name} results, saving to dict")
+                    results[func_name] = result
+            except Exception as e:
+                raise BaseException(f"Failed to pull data for {func_name}: {e}")
+    return results
+
+
+def pull_data_old(num_days, max_date=None):
+    results = dict()
+    date_kwargs = {"to_print": True, "output": results, "num_days": num_days}
+    if max_date:
+        date_kwargs["max_date"] = max_date
+    kwargs = {"to_print": True, "output": results}
+
     threads = []
     threads.append(
         threading.Thread(
@@ -250,6 +283,7 @@ def pull_data(num_days, max_date=None):
     threads.append(threading.Thread(target=get_event_spreadsheet, kwargs=kwargs))
 
     threads.append(threading.Thread(target=get_dictionary, kwargs=kwargs))
+    threads.append(threading.Thread(target=size_match.main, kwargs={"out": False}))
     for thread in threads:
         thread.start()
     for thread in threads:

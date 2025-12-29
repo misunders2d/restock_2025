@@ -2,9 +2,7 @@ import pandas as pd
 import os
 from tkinter import messagebox
 
-from connectors import gdrive as gd
 from utils import mellanni_modules as mm
-from utils import size_match
 from restock_utils import (
     calculate_inventory_isr,
     get_asin_sales,
@@ -40,8 +38,9 @@ def calculate_restock(
     amazon_sales["date"] = pd.to_datetime(amazon_sales["date"])
 
     wh_inventory = results["get_wh_inventory"]
-
     amazon_inventory = results["get_amazon_inventory"]
+    full_event_spreadsheet = results["get_event_spreadsheet"]
+    dimensions = results["size_match"]
 
     asin_isr = calculate_inventory_isr(
         amazon_inventory[["date", "asin", "amz_inventory"]].copy()
@@ -52,8 +51,6 @@ def calculate_restock(
     )
 
     # add event performance
-    full_event_spreadsheet = results["get_event_spreadsheet"]
-
     nearest_event, days_to_event, event_duration = get_event_days_delta()
 
     HARD_COLUMNS = [
@@ -98,6 +95,8 @@ def calculate_restock(
     )
 
     calculated_days_to_event = 0 if days_to_event > 90 else days_to_event
+    if nearest_event == "BSS":
+        calculated_days_to_event = 0 if days_to_event > 45 else days_to_event
 
     outside_event_sales = forecast["avg units"] * (
         calculated_days_to_event + STANDARD_DAYS_OF_SALE
@@ -123,7 +122,6 @@ def calculate_restock(
     forecast["dos_available"] = forecast["amz_available"] / forecast["avg units"]
     forecast["dos_inbound"] = forecast["amz_inventory"] / forecast["avg units"]
 
-    dimensions = size_match.main(out=False)
     dimensions = dimensions[["asin", "sets in a box"]]
     dimensions = dimensions.drop_duplicates("asin")
     forecast = pd.merge(forecast, dimensions, how="left", on="asin", validate="1:1")

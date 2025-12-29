@@ -6,13 +6,13 @@ from typing import Literal
 
 
 def calculate_inventory_isr(
-    amazon_inventory: pd.DataFrame, inv_max_date: str | None = None
+    amazon_inventory: pd.DataFrame, inv_max_date_input: str | None = None
 ):  # done
 
-    if not inv_max_date:
+    if not inv_max_date_input:
         inv_max_date = amazon_inventory["date"].max()
     else:
-        inv_max_date = pd.to_datetime(inv_max_date).date()
+        inv_max_date = pd.to_datetime(inv_max_date_input).date()
 
     inventory_grouped: pd.DataFrame = (
         amazon_inventory.groupby(["date", "asin"]).agg("sum").reset_index()
@@ -57,14 +57,14 @@ def get_asin_sales(
     amazon_sales: pd.DataFrame,
     asin_isr: pd.DataFrame,
     include_events: bool = False,
-    sales_max_date: str | None = None,
+    sales_max_date_input: str | None = None,
     long_term_days: int = 180,
     short_term_days: int = 14,
 ):
-    if not sales_max_date:
+    if not sales_max_date_input:
         sales_max_date = (amazon_sales["date"].max() - pd.Timedelta(days=1)).date()
     else:
-        sales_max_date = pd.to_datetime(sales_max_date).date()
+        sales_max_date = pd.to_datetime(sales_max_date_input).date()
     non_event_days = get_last_non_event_days(
         num_days=long_term_days, max_date=sales_max_date, include_events=include_events
     )
@@ -222,6 +222,9 @@ def calculate_event_forecast(
         )
 
     event_df = filter_event_spreadsheet(full_spreadsheet=full_event_df, event=event)
+    if event_df is None:
+        raise BaseException("Could not pull create event_df dataframe")
+
     event_duration = events[event]["duration"]
 
     forecast = pd.merge(
@@ -270,12 +273,21 @@ def calculate_event_forecast(
 
 def calculate_amazon_inventory(amazon_inventory: pd.DataFrame):
     max_date = amazon_inventory["date"].max()
-    last_inventory = amazon_inventory[
+    last_inventory: pd.DataFrame = amazon_inventory[
         amazon_inventory["date"] >= max_date - timedelta(days=2)
     ]
+
+    last_inventory = (
+        last_inventory.groupby(["date", "asin"])
+        .agg({"amz_inventory": "sum", "amz_available": "sum"})
+        .reset_index()
+    )
+
+    last_inventory = last_inventory.sort_values(["date", "asin"], ascending=False)
+
     last_inventory = (
         last_inventory.groupby("asin")
-        .agg({"amz_inventory": "sum", "amz_available": "sum"})
+        .agg({"amz_inventory": "first", "amz_available": "first"})
         .reset_index()
     )
     return last_inventory
