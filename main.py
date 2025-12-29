@@ -42,16 +42,21 @@ def calculate_restock(
     wh_inventory = results["get_wh_inventory"]
     amazon_inventory = results["get_amazon_inventory"]
     full_event_spreadsheet = results["get_event_spreadsheet"]
+    dictionary = results["get_dictionary"]
     dimensions = results["size_match"]
 
-    #add latest day sales
+    # add latest day sales
     max_sales_date = amazon_sales["date"].max()
-    today = pd.to_datetime('today')
+    today = pd.to_datetime("today")
     if max_sales_date.date() == today.date():
         max_sales_date = max_sales_date - timedelta(days=1)
     max_sales_date_str = max_sales_date.strftime("%m-%d")
-    latest_sales = amazon_sales[amazon_sales['date'] == max_sales_date][['asin','unit_sales']]
-    latest_sales = latest_sales.rename(columns = {"unit_sales":f"{max_sales_date_str} sales"})
+    latest_sales = amazon_sales[amazon_sales["date"] == max_sales_date][
+        ["asin", "unit_sales"]
+    ]
+    latest_sales = latest_sales.rename(
+        columns={"unit_sales": f"{max_sales_date_str} sales"}
+    )
 
     asin_isr = calculate_inventory_isr(
         amazon_inventory[["date", "asin", "amz_inventory"]].copy()
@@ -60,8 +65,12 @@ def calculate_restock(
     total_sales = get_asin_sales(
         amazon_sales, asin_isr, include_events=include_events, long_term_days=num_days
     )
-    total_sales = pd.merge(total_sales, latest_sales, how = 'outer', on = 'asin', validate='1:1')
-    total_sales[f"{max_sales_date_str} sales"] = total_sales[f"{max_sales_date_str} sales"].fillna(0)
+    total_sales = pd.merge(
+        total_sales, latest_sales, how="outer", on="asin", validate="1:1"
+    )
+    total_sales[f"{max_sales_date_str} sales"] = total_sales[
+        f"{max_sales_date_str} sales"
+    ].fillna(0)
 
     # add event performance
     nearest_event, days_to_event, event_duration = get_event_days_delta()
@@ -75,17 +84,16 @@ def calculate_restock(
         total_sales, event_forecast, how="outer", on="asin", validate="1:1"
     )
 
-    calculated_days_to_event = 0 if days_to_event > 90 else days_to_event
-    if nearest_event == "BSS":
-        calculated_days_to_event = 0 if days_to_event > 45 else days_to_event
+    days_threshold = 45 if nearest_event == "BSS" else 90
 
+    calculated_days_to_event = 0 if days_to_event > days_threshold else days_to_event
     outside_event_sales = forecast["avg units"] * (
         calculated_days_to_event + STANDARD_DAYS_OF_SALE
     )
 
     total_units_needed = (
         outside_event_sales
-        if days_to_event > 90
+        if days_to_event > days_threshold
         else outside_event_sales + forecast[f"{nearest_event}_forecasted_sales"]
     )
     forecast["total units needed"] = total_units_needed
@@ -103,17 +111,24 @@ def calculate_restock(
     forecast["dos_available"] = forecast["amz_available"] / forecast["avg units"]
     forecast["dos_inbound"] = forecast["amz_inventory"] / forecast["avg units"]
 
-
     # forecast['dos_shipped'] = (forecast['to_ship_boxes'] * forecast['sets in a box'] + forecast['amz_inventory'])/ forecast["avg units"]
     forecast["dos_shipped"] = "=(Y:Y*X:X+O:O)/H:H"
 
-    #lost sales calculations
-    forecast['avg price'] = forecast['avg $'] / forecast['avg units']
-    max_inventory_sales = forecast[["amz_inventory",f"{max_sales_date_str} sales"]].max(axis = 1)
-    min_inventory_sales = forecast[["amz_available",f"{max_sales_date_str} sales"]].max(axis = 1)
+    # lost sales calculations
+    forecast["avg price"] = forecast["avg $"] / forecast["avg units"]
+    max_inventory_sales = forecast[
+        ["amz_inventory", f"{max_sales_date_str} sales"]
+    ].max(axis=1)
+    min_inventory_sales = forecast[
+        ["amz_available", f"{max_sales_date_str} sales"]
+    ].max(axis=1)
 
-    forecast['lost sales min'] = (forecast['avg units']-max_inventory_sales).clip(0) * forecast['avg price']
-    forecast['lost sales max'] = (forecast['avg units']-min_inventory_sales).clip(0) * forecast['avg price']
+    forecast["lost sales min"] = (forecast["avg units"] - max_inventory_sales).clip(
+        0
+    ) * forecast["avg price"]
+    forecast["lost sales max"] = (forecast["avg units"] - min_inventory_sales).clip(
+        0
+    ) * forecast["avg price"]
 
     dimensions = dimensions[["asin", "sets in a box"]]
     dimensions = dimensions.drop_duplicates("asin")
@@ -121,8 +136,7 @@ def calculate_restock(
     forecast["to_ship_boxes"] = (
         forecast["to_ship_units"] / forecast["sets in a box"]
     ).round(0)
-    
-    dictionary = results["get_dictionary"]
+
     # dictionary_obj = gd.download_file(file_id="1RzO_OLIrvgtXYeGUncELyFgG-jJdCheB")
     # dictionary = pd.read_excel(dictionary_obj)
     dictionary.columns = [x.lower().strip() for x in dictionary.columns]
@@ -137,6 +151,11 @@ def calculate_restock(
         on="sku",
         validate="1:1",
     )
+
+    wh_inventory["sku_mapping"] = (
+        wh_inventory["sku"].astype(str) + ":" + wh_inventory["restockable"].astype(str)
+    )
+
     asin_wh_inventory = (
         wh_inventory.groupby("asin")
         .agg(
@@ -149,6 +168,7 @@ def calculate_restock(
                 "collection": lambda x: ", ".join(sorted(x.unique())),
                 "size": lambda x: ", ".join(sorted(x.unique())),
                 "color": lambda x: ", ".join(sorted(x.unique())),
+                "sku_mapping": lambda x: ", ".join(sorted(x.unique())),
             }
         )
         .reset_index()
@@ -161,6 +181,11 @@ def calculate_restock(
     forecast[["to_ship_units", "amz_inventory", "wh_inventory"]] = forecast[
         ["to_ship_units", "amz_inventory", "wh_inventory"]
     ].fillna(0)
+
+    forecast.loc[
+        (forecast["life stage"] == "Discontinued") & (forecast["wh_inventory"] == 0),
+        ["lost sales min", "lost sales max"],
+    ] = 0
 
     forecast.loc[
         (forecast["to_ship_units"] == 0)
@@ -190,9 +215,9 @@ def calculate_restock(
         "dos_available",
         "dos_inbound",
         "dos_shipped",
-        'avg price',
-        'lost sales min',
-        'lost sales max',
+        "avg price",
+        "lost sales min",
+        "lost sales max",
         "sets in a box",
         "to_ship_boxes",
         "wh_inventory",
@@ -203,8 +228,8 @@ def calculate_restock(
         "collection",
         "size",
         "color",
+        "sku_mapping",
     ]
-
 
     if not forecast.columns.tolist() == HARD_COLUMNS:
         # raise BaseException("Columns don't match, don't forget to change Excel formula in 'dos_shipped' column")
@@ -220,9 +245,11 @@ def calculate_restock(
 
 if __name__ == "__main__":
     max_date = None
-    if len(sys.argv)>1:
+    if len(sys.argv) > 1:
         max_date = sys.argv[1]
-    forecast, results = calculate_restock(include_events=False, num_days=180, max_date = max_date)
+    forecast, results = calculate_restock(
+        include_events=False, num_days=180, max_date=max_date
+    )
 
 
 # TODO think about limiting the number of days to account for depending on the event
