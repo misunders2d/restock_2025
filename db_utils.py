@@ -46,14 +46,14 @@ def get_amazon_sales(
         print("Starting to run `get_amazon_sales`")
     query = f"""
         SELECT
-            CAST(purchase_date AS DATE) AS date,
+            CAST(DATETIME(purchase_date, "America/Los_Angeles") AS DATE) AS date,
             asin,
             SUM(quantity) AS unit_sales,
             SUM(item_price) AS dollar_sales
         FROM
             `mellanni-project-da.reports.all_orders`
         WHERE
-            CAST(purchase_date AS DATE) BETWEEN DATE_SUB({MAX_DATE}, INTERVAL {num_days + 90} DAY) AND {MAX_DATE}
+            CAST(DATETIME(purchase_date, "America/Los_Angeles") AS DATE) BETWEEN DATE_SUB({MAX_DATE}, INTERVAL {num_days + 90} DAY) AND {MAX_DATE}
             AND sales_channel = 'Amazon.com'
         GROUP BY
             1, 2
