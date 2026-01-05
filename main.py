@@ -229,8 +229,10 @@ def calculate_restock(
         "size",
         "color",
         "sku_mapping",
+        "date",
     ]
-
+    file_date = pd.to_datetime("today").strftime("%Y-%m-%d")
+    forecast["date"] = file_date
     if not forecast.columns.tolist() == HARD_COLUMNS:
         # raise BaseException("Columns don't match, don't forget to change Excel formula in 'dos_shipped' column")
         messagebox.showwarning(
@@ -238,7 +240,9 @@ def calculate_restock(
             message="Columns don't match, don't forget to change Excel formula in 'dos_shipped' column",
         )
 
-    mm.export_to_excel([forecast], ["restock"], "inventory_restock.xlsx", user_folder)
+    forecast['asin'] = '=HYPERLINK("https://www.amazon.com/dp/' + forecast["asin"].astype(str) + '","' + forecast['asin'].astype(str) + '")'
+
+    mm.export_to_excel([forecast], ["restock"], f"inventory_restock_{file_date}.xlsx", user_folder)
     mm.open_file_folder(os.path.join(user_folder))
     return forecast, results
 
