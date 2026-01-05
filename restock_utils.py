@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from datetime import timedelta
 from date_utils import get_last_non_event_days, events
-from typing import Literal
+from typing import Literal, Any
 
 
 def calculate_inventory_isr(
@@ -291,3 +291,90 @@ def calculate_amazon_inventory(amazon_inventory: pd.DataFrame):
         .reset_index()
     )
     return last_inventory
+
+
+def create_column_formatting(
+    short_term_days: int = 14, long_term_days: int = 180
+) -> dict[str, Any]:
+    currency_columns = (
+        f"avg sales dollar, {short_term_days} days",
+        f"avg sales dollar, {long_term_days} days",
+        "avg $",
+        "avg price",
+        "lost sales min",
+        "lost sales max",
+    )
+    currency_formatting = {column: {"type": "currency"} for column in currency_columns}
+    units_formatting = {
+        column: {"type": "number"}
+        for column in [
+            "amz_inventory",
+            "amz_available",
+            "wh_inventory",
+            "incoming_containers",
+        ]
+    }
+    perc_formatting = {column: {"type": "percent"} for column in ["ISR", "ISR_short"]}
+    column_formatting: dict[str, Any] = {
+        "avg units": {
+            "type": "3-color",
+            "min_value": 3,
+            "min_color": "red",
+            "min_type": "num",
+            "max_value": 10,
+            "max_color": "green",
+            "max_type": "num",
+            "mid_value": 5,
+            "mid_color": "yellow",
+            "mid_type": "num",
+        },
+        "dos_available": [
+            {
+                "type": "3-color",
+                "min_value": 21,
+                "min_color": "red",
+                "min_type": "num",
+                "max_value": 49,
+                "max_color": "green",
+                "max_type": "num",
+                "mid_value": 30,
+                "mid_color": "yellow",
+                "mid_type": "num",
+            },
+            {"type":"decimal","precision":1},
+        ],
+        "dos_inbound": [
+            {
+                "type": "3-color",
+                "min_value": 49,
+                "min_color": "red",
+                "min_type": "num",
+                "max_value": 90,
+                "max_color": "green",
+                "max_type": "num",
+                "mid_value": 60,
+                "mid_color": "yellow",
+                "mid_type": "num",
+            },
+            {"type":"decimal","precision":1},
+        ],
+        "dos_shipped": [
+            {
+                "type": "3-color",
+                "min_value": 49,
+                "min_color": "red",
+                "min_type": "num",
+                "max_value": 90,
+                "max_color": "green",
+                "max_type": "num",
+                "mid_value": 60,
+                "mid_color": "yellow",
+                "mid_type": "num",
+            },
+            {"type":"decimal","precision":1},
+        ],
+    }
+    column_formatting.update(currency_formatting)
+    column_formatting.update(units_formatting)
+    column_formatting.update(perc_formatting)
+    return column_formatting

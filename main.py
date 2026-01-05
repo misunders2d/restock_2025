@@ -10,6 +10,7 @@ from restock_utils import (
     get_asin_sales,
     calculate_event_forecast,
     calculate_amazon_inventory,
+    create_column_formatting,
 )
 from db_utils import pull_data
 from date_utils import get_event_days_delta
@@ -240,9 +241,21 @@ def calculate_restock(
             message="Columns don't match, don't forget to change Excel formula in 'dos_shipped' column",
         )
 
-    forecast['asin'] = '=HYPERLINK("https://www.amazon.com/dp/' + forecast["asin"].astype(str) + '","' + forecast['asin'].astype(str) + '")'
+    forecast["asin"] = (
+        '=HYPERLINK("https://www.amazon.com/dp/'
+        + forecast["asin"].astype(str)
+        + '","'
+        + forecast["asin"].astype(str)
+        + '")'
+    )
 
-    mm.export_to_excel([forecast], ["restock"], f"inventory_restock_{file_date}.xlsx", user_folder)
+    mm.export_to_excel(
+        dfs=[forecast],
+        sheet_names=["restock"],
+        filename=f"inventory_restock_{file_date}.xlsx",
+        out_folder=user_folder,
+        column_formats=create_column_formatting(),
+    )
     mm.open_file_folder(os.path.join(user_folder))
     return forecast, results
 
