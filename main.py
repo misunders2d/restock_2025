@@ -37,8 +37,13 @@ def calculate_restock(
 
     results = pull_data(num_days=num_days, max_date=max_date)
 
-    amazon_sales = results["get_amazon_sales"]
-    amazon_sales["date"] = pd.to_datetime(amazon_sales["date"])
+    amazon_sales_full = results["get_amazon_sales"]
+    amazon_sales_full["date"] = pd.to_datetime(amazon_sales_full["date"])
+    amazon_sales = (
+        amazon_sales_full.groupby(["date", "asin"])
+        .agg({"unit_sales": "sum", "dollar_sales": "sum"})
+        .reset_index()
+    )
 
     wh_inventory = results["get_wh_inventory"]
     amazon_inventory = results["get_amazon_inventory"]
@@ -61,6 +66,10 @@ def calculate_restock(
 
     asin_isr = calculate_inventory_isr(
         amazon_inventory[["date", "asin", "amz_inventory"]].copy()
+    )
+
+    sku_isr = calculate_inventory_isr(
+        amazon_inventory[["date", "sku", "amz_inventory"]].copy(), col_to_use="sku"
     )
 
     total_sales = get_asin_sales(
@@ -100,6 +109,7 @@ def calculate_restock(
     forecast["total units needed"] = total_units_needed
 
     asin_inventory = calculate_amazon_inventory(amazon_inventory)
+    sku_inventory = calculate_amazon_inventory(amazon_inventory, col_to_use="sku")
 
     forecast = pd.merge(
         forecast, asin_inventory, how="left", on="asin", validate="1:1"
@@ -249,9 +259,23 @@ def calculate_restock(
         + '")'
     )
 
+    sku_results = pd.merge(
+        sku_inventory,
+        wh_inventory,
+        how = 'outer',
+        on = 'sku',
+        validate='1:1')
+    sku_results = pd.merge(
+        sku_results,
+        sku_isr,
+        how = 'outer',
+        on = 'sku',
+        validate='1:1'
+        )
+
     mm.export_to_excel(
-        dfs=[forecast],
-        sheet_names=["restock"],
+        dfs=[forecast, sku_results],
+        sheet_names=["restock", "sku_inventory"],
         filename=f"inventory_restock_{file_date}.xlsx",
         out_folder=user_folder,
         column_formats=create_column_formatting(),

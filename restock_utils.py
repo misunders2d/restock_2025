@@ -6,7 +6,9 @@ from typing import Literal, Any
 
 
 def calculate_inventory_isr(
-    amazon_inventory: pd.DataFrame, inv_max_date_input: str | None = None
+    amazon_inventory: pd.DataFrame,
+    inv_max_date_input: str | None = None,
+    col_to_use: Literal["asin", "sku"] = "asin",
 ):  # done
 
     if not inv_max_date_input:
@@ -15,7 +17,7 @@ def calculate_inventory_isr(
         inv_max_date = pd.to_datetime(inv_max_date_input).date()
 
     inventory_grouped: pd.DataFrame = (
-        amazon_inventory.groupby(["date", "asin"]).agg("sum").reset_index()
+        amazon_inventory.groupby(["date", col_to_use]).agg("sum").reset_index()
     )
 
     inventory_grouped = inventory_grouped[(inventory_grouped["date"] <= inv_max_date)]
@@ -28,7 +30,7 @@ def calculate_inventory_isr(
 
     asin_isr_long_term = (
         inventory_grouped.pivot_table(
-            values="in-stock-rate", index="asin", aggfunc="mean"
+            values="in-stock-rate", index=col_to_use, aggfunc="mean"
         )
         .round(2)
         .reset_index()
@@ -36,7 +38,7 @@ def calculate_inventory_isr(
 
     asin_isr_short_term = (
         two_week_inventory.pivot_table(
-            values="in-stock-rate", index="asin", aggfunc="mean"
+            values="in-stock-rate", index=col_to_use, aggfunc="mean"
         )
         .round(2)
         .reset_index()
@@ -47,7 +49,11 @@ def calculate_inventory_isr(
         columns={"in-stock-rate": "ISR_short"}
     )
     asin_isr = pd.merge(
-        asin_isr_long_term, asin_isr_short_term, on="asin", how="outer", validate="1:1"
+        asin_isr_long_term,
+        asin_isr_short_term,
+        on=col_to_use,
+        how="outer",
+        validate="1:1",
     )
 
     return asin_isr.fillna(0)
@@ -271,22 +277,25 @@ def calculate_event_forecast(
     ]
 
 
-def calculate_amazon_inventory(amazon_inventory: pd.DataFrame):
+def calculate_amazon_inventory(
+    amazon_inventory: pd.DataFrame,
+    col_to_use: Literal["asin", "sku"] = "asin"
+) -> pd.DataFrame:
     max_date = amazon_inventory["date"].max()
     last_inventory: pd.DataFrame = amazon_inventory[
         amazon_inventory["date"] >= max_date - timedelta(days=2)
     ]
 
     last_inventory = (
-        last_inventory.groupby(["date", "asin"])
+        last_inventory.groupby(["date", col_to_use])
         .agg({"amz_inventory": "sum", "amz_available": "sum"})
         .reset_index()
     )
 
-    last_inventory = last_inventory.sort_values(["date", "asin"], ascending=False)
+    last_inventory = last_inventory.sort_values(["date", col_to_use], ascending=False)
 
     last_inventory = (
-        last_inventory.groupby("asin")
+        last_inventory.groupby(col_to_use)
         .agg({"amz_inventory": "first", "amz_available": "first"})
         .reset_index()
     )
@@ -341,7 +350,7 @@ def create_column_formatting(
                 "mid_color": "yellow",
                 "mid_type": "num",
             },
-            {"type":"decimal","precision":1},
+            {"type": "decimal", "precision": 1},
         ],
         "dos_inbound": [
             {
@@ -356,7 +365,7 @@ def create_column_formatting(
                 "mid_color": "yellow",
                 "mid_type": "num",
             },
-            {"type":"decimal","precision":1},
+            {"type": "decimal", "precision": 1},
         ],
         "dos_shipped": [
             {
@@ -371,7 +380,7 @@ def create_column_formatting(
                 "mid_color": "yellow",
                 "mid_type": "num",
             },
-            {"type":"decimal","precision":1},
+            {"type": "decimal", "precision": 1},
         ],
     }
     column_formatting.update(currency_formatting)
@@ -383,6 +392,14 @@ def create_column_formatting(
 def push_restock_to_bq(restock: pd.DataFrame) -> None:
     from connectors import gcloud as gc
 
-    if not isinstance(restock, pd.DataFrame) or restock.empty or  "to_ship_units" not in restock.columns:
-        raise BaseException("restock must be a non-empty DataFrame with 'to_ship_units' column")
-    _ = gc.push_to_cloud(restock, destination="daily_reports.restock", if_exists="replace")
+    if (
+        not isinstance(restock, pd.DataFrame)
+        or restock.empty
+        or "to_ship_units" not in restock.columns
+    ):
+        raise BaseException(
+            "restock must be a non-empty DataFrame with 'to_ship_units' column"
+        )
+    _ = gc.push_to_cloud(
+        restock, destination="daily_reports.restock", if_exists="replace"
+    )
