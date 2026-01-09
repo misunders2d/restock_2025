@@ -1,5 +1,5 @@
 import datetime
-from typing import Literal
+from typing import Literal, Any
 import pandas as pd
 
 from common import event_dates
@@ -50,7 +50,7 @@ def get_month_day(
 
 
 events = {
-    "BSS": {"month": 3, "day": 20, "duration": 2},
+    "BSS": {"month": 3, "day": 20, "duration": 7},
     "PD": {"month": 7, "day": 10, "duration": 4},
     "PBDD": {"month": 10, "day": 7, "duration": 2},
     "BFCM": {
@@ -115,7 +115,8 @@ def get_event_days_delta():
     return nearest_event, days_to_event, events[nearest_event]["duration"]
 
 
-def is_event(year, month, day):
+def is_event(year, month, day) -> Any:
+
     future_event_dates = {
         key: pd.date_range(
             start=pd.to_datetime(f"{year}-{value['month']}-{value['day']}").date(),
@@ -128,4 +129,4 @@ def is_event(year, month, day):
     for event in future_event_dates:
         if (month, day) in ((x.month, x.day) for x in future_event_dates[event]):
             return event
-    return False
+    return None

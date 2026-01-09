@@ -267,6 +267,3 @@ if __name__ == "__main__":
     forecast, results = calculate_restock(
         include_events=False, num_days=180, max_date=max_date
     )
-
-
-# TODO think about limiting the number of days to account for depending on the event

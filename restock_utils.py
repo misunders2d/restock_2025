@@ -318,7 +318,7 @@ def create_column_formatting(
     column_formatting: dict[str, Any] = {
         "avg units": {
             "type": "3-color",
-            "min_value": 3,
+            "min_value": 2,
             "min_color": "red",
             "min_type": "num",
             "max_value": 10,
@@ -378,3 +378,11 @@ def create_column_formatting(
     column_formatting.update(units_formatting)
     column_formatting.update(perc_formatting)
     return column_formatting
+
+
+def push_restock_to_bq(restock: pd.DataFrame) -> None:
+    from connectors import gcloud as gc
+
+    if not isinstance(restock, pd.DataFrame) or restock.empty or  "to_ship_units" not in restock.columns:
+        raise BaseException("restock must be a non-empty DataFrame with 'to_ship_units' column")
+    _ = gc.push_to_cloud(restock, destination="daily_reports.restock", if_exists="replace")
