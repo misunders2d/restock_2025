@@ -1,5 +1,10 @@
 import pandas as pd
 import numpy as np
+import openpyxl
+import re
+from connectors import gcloud as gc
+from common import user_folder
+from tkinter.filedialog import askopenfilename
 from datetime import timedelta
 from date_utils import get_last_non_event_days, events
 from typing import Literal, Any
@@ -389,8 +394,40 @@ def create_column_formatting(
     return column_formatting
 
 
-def push_restock_to_bq(restock: pd.DataFrame) -> None:
-    from connectors import gcloud as gc
+def load_excel_with_hyperlinks(file_path):
+    wb = openpyxl.load_workbook(file_path, data_only=False)
+    sheet = wb.active
+    if not sheet:
+        raise ValueError("The Excel file does not contain any sheets.")
+    
+    data = []
+    headers = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+    
+    for row in sheet.iter_rows(min_row=2):
+        row_data = []
+        for cell in row:
+            val = cell.value
+            
+            if isinstance(val, str) and val.startswith('=HYPERLINK'):
+                match = re.search(r',"(.*?)"\)', val)
+                if match:
+                    row_data.append(match.group(1))
+                else:
+                    # Fallback if regex fails (e.g. if formula structure differs)
+                    row_data.append(val)
+            else:
+                row_data.append(val)
+        data.append(row_data)
+    
+    return pd.DataFrame(data, columns=headers)
+
+
+def push_restock_to_bq() -> None:
+    """
+    Pushes inventory restock to BigQuery table daily_reports.restock
+    """
+    file_path = askopenfilename(title="Select a file with the forecast", initialdir=user_folder)
+    restock = load_excel_with_hyperlinks(file_path)
 
     if (
         not isinstance(restock, pd.DataFrame)
@@ -402,4 +439,27 @@ def push_restock_to_bq(restock: pd.DataFrame) -> None:
         )
     _ = gc.push_to_cloud(
         restock, destination="daily_reports.restock", if_exists="replace"
+    )
+
+
+def push_forecast_to_bq() -> None:
+    """
+    Helper function to push forecast located in https://drive.google.com/drive/folders/1fSNHjoA6o1EOLOuBZrIrKDcM3wG9Xyre?usp=drive_link
+    to BigQuery table daily_reports.forecast
+    """
+
+    file_path = askopenfilename(title="Select a file with the forecast", initialdir=user_folder)
+    forecast = pd.read_excel(file_path)
+
+    if (
+        not isinstance(forecast, pd.DataFrame)
+        or forecast.empty
+        or "units" not in forecast.columns
+    ):
+        raise BaseException(
+            "forecast must be a non-empty DataFrame with 'to_ship_units' column"
+        )
+    forecast = forecast[['asin','date','units']]
+    _ = gc.push_to_cloud(
+        forecast, destination="daily_reports.forecast", if_exists="replace"
     )

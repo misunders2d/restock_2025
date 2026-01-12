@@ -35,6 +35,7 @@ def main(stack=False):
 
     get_amazon_sales(output=result, to_print=True, num_days=20000)
     full_sales = result["get_amazon_sales"].copy()
+    full_sales = full_sales[['date', 'sku', 'asin', 'unit_sales', 'dollar_sales']]
     daily_sales = (
         full_sales[["date", "unit_sales"]].groupby("date").agg("sum").reset_index()
     )
@@ -83,9 +84,10 @@ def main(stack=False):
         return month, day
 
     current_restock, results = calculate_restock(
-        include_events=False, num_days=365, max_date="2025-11-19"
+        include_events=False, num_days=365, max_date=None
     )
     forecast = current_restock[["asin", "avg units"]].copy()
+    forecast['asin'] = forecast['asin'].str.extract(r'(B\w{9})')
     forecast["avg price"] = current_restock["avg $"] / current_restock["avg units"]
     wh_inventory = results["get_wh_inventory"]
     wh_dictionary = results["get_dictionary"][

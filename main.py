@@ -291,3 +291,6 @@ if __name__ == "__main__":
     forecast, results = calculate_restock(
         include_events=False, num_days=180, max_date=max_date
     )
+
+
+# remove fbm only, do not ship to amazon from Lost sales
