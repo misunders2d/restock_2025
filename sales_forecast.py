@@ -5,6 +5,7 @@ from date_utils import is_event, events
 from restock_utils import calculate_event_forecast
 from common import event_dates_margins_list, user_folder
 from utils import mellanni_modules as mm
+from typing import Literal
 from main import calculate_restock
 import threading
 import time
@@ -29,11 +30,17 @@ def print_threaded():
         time.sleep(1)
 
 
-def main(stack=False):
+# def main(stack=False):
+def main(stack:Literal["stacked","daily","yearly"]="stacked", max_date: str | None = None):
+    """
+    "stacked" - forecast with daily breakdown stacked in single column
+    "daily" - forecast with daily breakdown in separate columns
+    "yearly" - forecast with yearly totals only
+    """
     global stop
     result = {}
 
-    get_amazon_sales(output=result, to_print=True, num_days=20000)
+    get_amazon_sales(output=result, to_print=True, num_days=20000, max_date=max_date)
     full_sales = result["get_amazon_sales"].copy()
     full_sales = full_sales[['date', 'sku', 'asin', 'unit_sales', 'dollar_sales']]
     daily_sales = (
@@ -84,7 +91,7 @@ def main(stack=False):
         return month, day
 
     current_restock, results = calculate_restock(
-        include_events=False, num_days=365, max_date=None
+        include_events=False, num_days=365, max_date=max_date
     )
     forecast = current_restock[["asin", "avg units"]].copy()
     forecast['asin'] = forecast['asin'].str.extract(r'(B\w{9})')
@@ -136,7 +143,7 @@ def main(stack=False):
     ).fillna(0)
 
     future_date_range = pd.date_range(
-        start=(pd.to_datetime("today")).date(),
+        start=(pd.to_datetime("today")).date() if not max_date else pd.to_datetime(max_date).date(),
         end=(pd.to_datetime("today") + pd.Timedelta(days=500)).date(),
     )
     life_stage_dictionary = results["get_dictionary"][
@@ -154,7 +161,7 @@ def main(stack=False):
 
     forecast_dollars = forecast.copy()
 
-    if stack:
+    if stack == "stacked":
         total = pd.DataFrame()
         for date in future_date_range:
             forecast["date"] = date.date()
@@ -221,7 +228,7 @@ def main(stack=False):
         # import os
         # total.to_csv(os.path.join(user_folder, "sales_forecast_stack.csv"), index=False)
 
-    else:
+    elif stack == "daily":
         for date in future_date_range:
             forecast[date.date()] = (
                 forecast["avg units"] * averages[get_nearest_date(date)]
@@ -254,4 +261,4 @@ def main(stack=False):
 
 
 if __name__ == "__main__":
-    main(stack=True)
+    main(stack="stacked")

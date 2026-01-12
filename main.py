@@ -244,11 +244,13 @@ def calculate_restock(
     ]
     file_date = pd.to_datetime("today").strftime("%Y-%m-%d")
     forecast["date"] = file_date
-    if not forecast.columns.tolist() == HARD_COLUMNS:
+    forecast_columns = forecast.columns.tolist()
+    if not forecast_columns == HARD_COLUMNS:
         # raise BaseException("Columns don't match, don't forget to change Excel formula in 'dos_shipped' column")
+        mismatched_cols = ', '.join([x for x in forecast_columns if x not in HARD_COLUMNS])
         messagebox.showwarning(
             title="Warning",
-            message="Columns don't match, don't forget to change Excel formula in 'dos_shipped' column",
+            message=f"Columns don't match, don't forget to change Excel formula in 'dos_shipped' column: {mismatched_cols}",
         )
 
     forecast["asin"] = (
