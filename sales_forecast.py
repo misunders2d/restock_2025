@@ -31,11 +31,12 @@ def print_threaded():
 
 
 # def main(stack=False):
-def main(stack:Literal["stacked","daily","yearly"]="stacked", max_date: str | None = None):
+def main(stack:Literal["stacked","daily","yearly","last_year"]="stacked", max_date: str | None = None):
     """
     "stacked" - forecast with daily breakdown stacked in single column
     "daily" - forecast with daily breakdown in separate columns
     "yearly" - forecast with yearly totals only
+    "last_year" - forecast based on last year's numbers
     """
     global stop
     result = {}
@@ -242,6 +243,42 @@ def main(stack:Literal["stacked","daily","yearly"]="stacked", max_date: str | No
                 date.date()
             ] * (1 / 180)
 
+    elif stack == "last_year":
+        full_sales['date'] = pd.to_datetime(
+            full_sales['date'],
+            format = "%Y-%m-%d",
+            # unit='D'
+            )
+        previous_sales = full_sales[full_sales['date'].dt.year == FORECAST_YEAR - 1].copy()
+        previous_sales_asin = previous_sales.groupby('asin').agg(
+            {'unit_sales':'sum'}
+            ).reset_index()
+        previous_sales_asin['lost_sales'] = ''
+        dictionary = results["get_dictionary"]
+        year_based_forecast = pd.merge(
+            previous_sales_asin,
+            total_inventory,
+            how='outer',
+            on='asin',
+            validate="1:1")
+        dictionary = dictionary.groupby('asin').agg(
+            {
+                "collection":lambda x: ', '.join(x.unique()),
+                "size":lambda x: ', '.join(x.unique()),
+                "color":lambda x: ', '.join(x.unique()),
+                "actuality":lambda x: ', '.join(x.unique()),
+                "life stage":lambda x: ', '.join(x.unique()),
+                "restockable":lambda x: ', '.join(x.unique()),
+
+            }
+        ).reset_index()
+        year_based_forecast = pd.merge(
+            year_based_forecast,
+            dictionary,
+            how='left',
+            on='asin',
+            validate="1:1")
+        
     thread1 = threading.Thread(target=print_threaded, daemon=True)
     thread2 = threading.Thread(
         target=mm.export_to_excel,

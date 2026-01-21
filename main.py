@@ -10,8 +10,8 @@ from restock_utils import (
     get_asin_sales,
     calculate_event_forecast,
     calculate_amazon_inventory,
-    create_column_formatting,
 )
+from utils_misc import create_column_formatting
 from db_utils import pull_data
 from date_utils import get_event_days_delta
 
