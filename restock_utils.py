@@ -286,7 +286,7 @@ def calculate_amazon_inventory(
     if max_date:
         max_date_dt = pd.to_datetime(max_date).date()
     else:
-        max_date_dt = (pd.to_datetime('today') - pd.Timedelta(days=1)).date()
+        max_date_dt = (pd.to_datetime("today") - pd.Timedelta(days=1)).date()
     last_inventory: pd.DataFrame = amazon_inventory[
         amazon_inventory["date"] >= max_date_dt - timedelta(days=1)
     ]
@@ -305,3 +305,44 @@ def calculate_amazon_inventory(
         .reset_index()
     )
     return last_inventory
+
+
+def group_incoming_by_weeks(incoming_weeks: pd.DataFrame) -> pd.DataFrame:
+    """
+    Helper function to group incoming containers ETAs into weeks and transform them into columns.
+    """
+
+    tables_list = []
+    for i, row in incoming_weeks.iterrows():
+        temp_df = pd.DataFrame()
+        for item in row["items"]:
+            items_df = pd.DataFrame.from_dict(item, orient="index").T
+            temp_df = pd.concat([temp_df, items_df])
+            temp_df["eta"] = row["eta"]
+            temp_df = (
+                temp_df.groupby(["eta", "SKU"]).agg({"QtyOrdered": "sum"}).reset_index()
+            )
+        tables_list.append(temp_df)
+
+    full_containers = pd.concat(tables_list)
+    full_containers["week"] = full_containers["eta"].dt.isocalendar().week
+    full_containers["year"] = full_containers["eta"].dt.isocalendar().year
+    full_containers = (
+        full_containers.groupby(["year", "week", "SKU"])
+        .agg({"QtyOrdered": "sum"})
+        .reset_index()
+    )
+
+    full_containers["year-week"] = (
+        full_containers["year"].astype(str) + "-" + full_containers["week"].astype(str)
+    )
+    full_containers = full_containers.pivot_table(
+        index="SKU", columns="year-week", values="QtyOrdered"
+    ).reset_index()
+
+    current_columns = [col for col in full_containers.columns.tolist() if col != "SKU"]
+    sorted_columns = sorted(
+        current_columns, key=lambda x: (int(x.split("-")[0]), int(x.split("-")[1]))
+    )
+    full_containers = full_containers[["SKU"] + sorted_columns]
+    return full_containers

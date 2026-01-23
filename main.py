@@ -247,7 +247,9 @@ def calculate_restock(
     forecast_columns = forecast.columns.tolist()
     if not forecast_columns == HARD_COLUMNS:
         # raise BaseException("Columns don't match, don't forget to change Excel formula in 'dos_shipped' column")
-        mismatched_cols = ', '.join([x for x in forecast_columns if x not in HARD_COLUMNS])
+        mismatched_cols = ", ".join(
+            [x for x in forecast_columns if x not in HARD_COLUMNS]
+        )
         messagebox.showwarning(
             title="Warning",
             message=f"Columns don't match, don't forget to change Excel formula in 'dos_shipped' column: {mismatched_cols}",
@@ -262,18 +264,9 @@ def calculate_restock(
     )
 
     sku_results = pd.merge(
-        sku_inventory,
-        wh_inventory,
-        how = 'outer',
-        on = 'sku',
-        validate='1:1')
-    sku_results = pd.merge(
-        sku_results,
-        sku_isr,
-        how = 'outer',
-        on = 'sku',
-        validate='1:1'
-        )
+        sku_inventory, wh_inventory, how="outer", on="sku", validate="1:1"
+    )
+    sku_results = pd.merge(sku_results, sku_isr, how="outer", on="sku", validate="1:1")
 
     mm.export_to_excel(
         dfs=[forecast, sku_results],

@@ -7,8 +7,6 @@ from connectors import gcloud as gc
 from typing import Any
 
 
-
-
 def create_column_formatting(
     short_term_days: int = 14, long_term_days: int = 180
 ) -> dict[str, Any]:
@@ -101,16 +99,16 @@ def load_excel_with_hyperlinks(file_path):
     sheet = wb.active
     if not sheet:
         raise ValueError("The Excel file does not contain any sheets.")
-    
+
     data = []
     headers = [cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
-    
+
     for row in sheet.iter_rows(min_row=2):
         row_data = []
         for cell in row:
             val = cell.value
-            
-            if isinstance(val, str) and val.startswith('=HYPERLINK'):
+
+            if isinstance(val, str) and val.startswith("=HYPERLINK"):
                 match = re.search(r',"(.*?)"\)', val)
                 if match:
                     row_data.append(match.group(1))
@@ -120,7 +118,7 @@ def load_excel_with_hyperlinks(file_path):
             else:
                 row_data.append(val)
         data.append(row_data)
-    
+
     return pd.DataFrame(data, columns=headers)
 
 
@@ -128,7 +126,9 @@ def push_restock_to_bq() -> None:
     """
     Pushes inventory restock to BigQuery table daily_reports.restock
     """
-    file_path = askopenfilename(title="Select a file with the forecast", initialdir=user_folder)
+    file_path = askopenfilename(
+        title="Select a file with the forecast", initialdir=user_folder
+    )
     restock = load_excel_with_hyperlinks(file_path)
 
     if (
@@ -150,7 +150,9 @@ def push_forecast_to_bq() -> None:
     to BigQuery table daily_reports.forecast
     """
 
-    file_path = askopenfilename(title="Select a file with the forecast", initialdir=user_folder)
+    file_path = askopenfilename(
+        title="Select a file with the forecast", initialdir=user_folder
+    )
     forecast = pd.read_excel(file_path)
 
     if (
@@ -161,7 +163,7 @@ def push_forecast_to_bq() -> None:
         raise BaseException(
             "forecast must be a non-empty DataFrame with 'to_ship_units' column"
         )
-    forecast = forecast[['asin','date','units', "$"]]
+    forecast = forecast[["asin", "date", "units", "$"]]
     _ = gc.push_to_cloud(
         forecast, destination="daily_reports.forecast", if_exists="replace"
     )

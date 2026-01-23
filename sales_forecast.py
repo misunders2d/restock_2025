@@ -31,7 +31,10 @@ def print_threaded():
 
 
 # def main(stack=False):
-def main(stack:Literal["stacked","daily","yearly","last_year"]="stacked", max_date: str | None = None):
+def main(
+    stack: Literal["stacked", "daily", "yearly", "last_year"] = "stacked",
+    max_date: str | None = None,
+):
     """
     "stacked" - forecast with daily breakdown stacked in single column
     "daily" - forecast with daily breakdown in separate columns
@@ -43,7 +46,7 @@ def main(stack:Literal["stacked","daily","yearly","last_year"]="stacked", max_da
 
     get_amazon_sales(output=result, to_print=True, num_days=20000, max_date=max_date)
     full_sales = result["get_amazon_sales"].copy()
-    full_sales = full_sales[['date', 'sku', 'asin', 'unit_sales', 'dollar_sales']]
+    full_sales = full_sales[["date", "sku", "asin", "unit_sales", "dollar_sales"]]
     daily_sales = (
         full_sales[["date", "unit_sales"]].groupby("date").agg("sum").reset_index()
     )
@@ -95,7 +98,7 @@ def main(stack:Literal["stacked","daily","yearly","last_year"]="stacked", max_da
         include_events=False, num_days=365, max_date=max_date
     )
     forecast = current_restock[["asin", "avg units"]].copy()
-    forecast['asin'] = forecast['asin'].str.extract(r'(B\w{9})')
+    forecast["asin"] = forecast["asin"].str.extract(r"(B\w{9})")
     forecast["avg price"] = current_restock["avg $"] / current_restock["avg units"]
     wh_inventory = results["get_wh_inventory"]
     wh_dictionary = results["get_dictionary"][
@@ -144,7 +147,11 @@ def main(stack:Literal["stacked","daily","yearly","last_year"]="stacked", max_da
     ).fillna(0)
 
     future_date_range = pd.date_range(
-        start=(pd.to_datetime("today")).date() if not max_date else pd.to_datetime(max_date).date(),
+        start=(
+            (pd.to_datetime("today")).date()
+            if not max_date
+            else pd.to_datetime(max_date).date()
+        ),
         end=(pd.to_datetime("today") + pd.Timedelta(days=500)).date(),
     )
     life_stage_dictionary = results["get_dictionary"][
@@ -244,41 +251,40 @@ def main(stack:Literal["stacked","daily","yearly","last_year"]="stacked", max_da
             ] * (1 / 180)
 
     elif stack == "last_year":
-        full_sales['date'] = pd.to_datetime(
-            full_sales['date'],
-            format = "%Y-%m-%d",
+        full_sales["date"] = pd.to_datetime(
+            full_sales["date"],
+            format="%Y-%m-%d",
             # unit='D'
-            )
-        previous_sales = full_sales[full_sales['date'].dt.year == FORECAST_YEAR - 1].copy()
-        previous_sales_asin = previous_sales.groupby('asin').agg(
-            {'unit_sales':'sum'}
-            ).reset_index()
-        previous_sales_asin['lost_sales'] = ''
+        )
+        previous_sales = full_sales[
+            full_sales["date"].dt.year == FORECAST_YEAR - 1
+        ].copy()
+        previous_sales_asin = (
+            previous_sales.groupby("asin").agg({"unit_sales": "sum"}).reset_index()
+        )
+        previous_sales_asin["lost_sales"] = ""
         dictionary = results["get_dictionary"]
         year_based_forecast = pd.merge(
-            previous_sales_asin,
-            total_inventory,
-            how='outer',
-            on='asin',
-            validate="1:1")
-        dictionary = dictionary.groupby('asin').agg(
-            {
-                "collection":lambda x: ', '.join(x.unique()),
-                "size":lambda x: ', '.join(x.unique()),
-                "color":lambda x: ', '.join(x.unique()),
-                "actuality":lambda x: ', '.join(x.unique()),
-                "life stage":lambda x: ', '.join(x.unique()),
-                "restockable":lambda x: ', '.join(x.unique()),
-
-            }
-        ).reset_index()
+            previous_sales_asin, total_inventory, how="outer", on="asin", validate="1:1"
+        )
+        dictionary = (
+            dictionary.groupby("asin")
+            .agg(
+                {
+                    "collection": lambda x: ", ".join(x.unique()),
+                    "size": lambda x: ", ".join(x.unique()),
+                    "color": lambda x: ", ".join(x.unique()),
+                    "actuality": lambda x: ", ".join(x.unique()),
+                    "life stage": lambda x: ", ".join(x.unique()),
+                    "restockable": lambda x: ", ".join(x.unique()),
+                }
+            )
+            .reset_index()
+        )
         year_based_forecast = pd.merge(
-            year_based_forecast,
-            dictionary,
-            how='left',
-            on='asin',
-            validate="1:1")
-        
+            year_based_forecast, dictionary, how="left", on="asin", validate="1:1"
+        )
+
     thread1 = threading.Thread(target=print_threaded, daemon=True)
     thread2 = threading.Thread(
         target=mm.export_to_excel,

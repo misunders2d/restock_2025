@@ -158,27 +158,43 @@ def get_wh_inventory(output: dict, to_print: bool = False) -> pd.DataFrame | Non
 
     incoming_query = """
         SELECT
-            items.SKU AS sku,
+            Items.SKU AS sku,
             sum(Items.QtyOrdered) as incoming_containers
         FROM
             `mellanni-project-da.sellercloud.purchase_orders` AS t1,
             UNNEST(t1.Items) AS items
         WHERE
             date(t1.ExpectedDeliveryDate) >= CURRENT_DATE()
-        GROUP BY items.SKU
+        GROUP BY Items.SKU
         ORDER BY
             incoming_containers
             DESC
+    """
+
+    incoming_weeks_query = """
+        SELECT
+            ExpectedDeliveryDate as eta,
+            Items as items
+        FROM
+            `mellanni-project-da.sellercloud.purchase_orders`
+        WHERE
+            date(ExpectedDeliveryDate) >= CURRENT_DATE()
+        ORDER BY
+            eta
+            ASC
     """
     try:
         with gc.gcloud_connect() as client:
             wh_job = client.query(wh_query)
             incoming_job = client.query(incoming_query)
+            incoming_weeks_job = client.query(incoming_weeks_query)
         wh = wh_job.to_dataframe()
         incoming = incoming_job.to_dataframe()
+        incoming_weeks = incoming_weeks_job.to_dataframe()
 
         result = pd.merge(wh, incoming, how="outer", on="sku", validate="1:1")
         output["get_wh_inventory"] = result
+        output["incoming_weeks"] = incoming_weeks
         if to_print:
             print("Saved data to results `get_wh_inventory`")
         return result
