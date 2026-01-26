@@ -112,7 +112,7 @@ def calculate_restock(
     sku_inventory = calculate_amazon_inventory(amazon_inventory, col_to_use="sku")
 
     forecast = pd.merge(
-        forecast, asin_inventory, how="left", on="asin", validate="1:1"
+        forecast, asin_inventory, how="outer", on="asin", validate="1:1"
     ).fillna(0)
 
     forecast["to_ship_units"] = (
