@@ -19,6 +19,12 @@ from date_utils import get_event_days_delta
 
 STANDARD_DAYS_OF_SALE = 49
 
+max_date = None
+include_events: bool = False
+num_days: int = 180
+max_date: str | None = None
+num_short_term_days = 14
+
 
 user_folder = os.path.join(os.path.expanduser("~"), "temp")
 os.makedirs(user_folder, exist_ok=True)

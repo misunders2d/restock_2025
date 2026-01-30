@@ -29,7 +29,7 @@ def calculate_inventory_isr(
     inventory_grouped["in-stock-rate"] = inventory_grouped["amz_inventory"] > 0
 
     two_week_inventory = inventory_grouped.loc[
-        inventory_grouped["date"]
+        pd.to_datetime(inventory_grouped["date"])
         >= pd.to_datetime(inv_max_date) - pd.Timedelta(days=13)
     ]
 
@@ -296,7 +296,8 @@ def calculate_amazon_inventory(
     else:
         max_date_dt = (pd.to_datetime("today") - pd.Timedelta(days=1)).date()
     check_date = max_date_dt - timedelta(days=1)
-    last_inventory = amazon_inventory.loc[:, amazon_inventory["date"] >= check_date]
+    last_inventory = amazon_inventory.loc[amazon_inventory["date"] >= check_date]
+    # last_inventory = last_inventory.replace("nan", "").replace(np.nan, "")
 
     attempts = 1
     while len(last_inventory) == 0 and attempts <= 10 and show_warning:
@@ -312,7 +313,7 @@ def calculate_amazon_inventory(
         check_date = max_date_dt - timedelta(days=attempts)
 
         last_inventory: pd.DataFrame = amazon_inventory.loc[
-            :, amazon_inventory["date"] >= check_date
+            amazon_inventory["date"] >= check_date
         ]
 
         if len(last_inventory) > 0:
@@ -321,18 +322,25 @@ def calculate_amazon_inventory(
                 message=f"Inventory exists for {check_date} only!",
             )
             break
+
+    def _fetch_unique(x):
+        x = x.astype(str)
+        x = x.replace("nan", "n/a")
+        x = x.replace(np.nan, "n/a")
+        return ", ".join(sorted(x.unique().tolist()))
+
     agg_dict = (
         {
             "amz_inventory": "sum",
             "amz_available": "sum",
-            "alert": lambda x: ", ".join(x.unique()),
-            "recommended_action": lambda x: ", ".join(x.unique()),
+            "alert": lambda x: _fetch_unique(x),
+            "recommended_action": lambda x: _fetch_unique(x),
             "healthy_inventory_level": "sum",
             "recommended_removal_quantity": "sum",
             "estimated_excess_quantity": "sum",
             "fba_minimum_inventory_level": "sum",
-            "fba_inventory_level_health_status": lambda x: ", ".join(x.unique()),
-            "storage_type": lambda x: ", ".join(x.unique()),
+            "fba_inventory_level_health_status": lambda x: _fetch_unique(x),
+            "storage_type": lambda x: _fetch_unique(x),
         }
         if col_to_use == "asin"
         else {"amz_inventory": "sum", "amz_available": "sum"}
