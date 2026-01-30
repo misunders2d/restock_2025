@@ -10,6 +10,7 @@ from restock_utils import (
     get_asin_sales,
     calculate_event_forecast,
     calculate_amazon_inventory,
+    group_incoming_by_weeks,
 )
 from utils_misc import create_column_formatting
 from db_utils import pull_data
@@ -22,19 +23,7 @@ user_folder = os.path.join(os.path.expanduser("~"), "temp")
 os.makedirs(user_folder, exist_ok=True)
 
 
-def calculate_restock(
-    include_events: bool, num_days: int = 180, max_date: str | None = None
-):
-    """
-    Ruslan
-    1. calculate in-stock-rate for the period (amz_inventory)
-    2. calculate average sales LONG_TERM and SHORT_TERM (180 days and 14 days)
-    3. calculate average combined as average of (average sales 180 days and 14 days)
-    4. calculate units needed (min 0, avoid negative numbers) for 49 days
-    combine two dataframes into one and output the following columns:
-        asin, average_sales_180, average_sales_14, average_combined, isr, amz_inventory (latest), wh_inventory (latest), units_to_ship
-    """
-
+def prepare_data(num_days, max_date):
     results = pull_data(num_days=num_days, max_date=max_date)
 
     amazon_sales_full = results["get_amazon_sales"]
@@ -50,8 +39,24 @@ def calculate_restock(
     full_event_spreadsheet = results["get_event_spreadsheet"]
     dictionary = results["get_dictionary"]
     dimensions = results["size_match"]
+    incoming_weeks_raw = results["incoming_weeks"]
 
-    # add latest day sales
+    incoming_weeks = group_incoming_by_weeks(incoming_weeks_raw)
+    incoming_weeks = incoming_weeks.rename(columns={"SKU": "sku"})
+    return (
+        amazon_sales,
+        wh_inventory,
+        amazon_inventory,
+        full_event_spreadsheet,
+        dictionary,
+        dimensions,
+        incoming_weeks,
+    )
+
+
+def prepare_total_sales(
+    amazon_sales, amazon_inventory, include_events, num_days, num_short_term_days
+):
     max_sales_date = amazon_sales["date"].max()
     today = pd.to_datetime("today")
     if max_sales_date.date() == today.date():
@@ -73,7 +78,11 @@ def calculate_restock(
     )
 
     total_sales = get_asin_sales(
-        amazon_sales, asin_isr, include_events=include_events, long_term_days=num_days
+        amazon_sales,
+        asin_isr,
+        include_events=include_events,
+        long_term_days=num_days,
+        short_term_days=num_short_term_days,
     )
     total_sales = pd.merge(
         total_sales, latest_sales, how="outer", on="asin", validate="1:1"
@@ -81,75 +90,11 @@ def calculate_restock(
     total_sales[f"{max_sales_date_str} sales"] = total_sales[
         f"{max_sales_date_str} sales"
     ].fillna(0)
+    return total_sales, sku_isr, max_sales_date_str
 
-    # add event performance
-    nearest_event, days_to_event, event_duration = get_event_days_delta()
 
-    event_forecast = calculate_event_forecast(
-        total_sales=total_sales,
-        full_event_df=full_event_spreadsheet,
-        event=nearest_event,
-    )
-    forecast = pd.merge(
-        total_sales, event_forecast, how="outer", on="asin", validate="1:1"
-    )
+def prepare_wh_inventory(dictionary, wh_inventory):
 
-    days_threshold = 45 if nearest_event == "BSS" else 90
-
-    calculated_days_to_event = 0 if days_to_event > days_threshold else days_to_event
-    outside_event_sales = forecast["avg units"] * (
-        calculated_days_to_event + STANDARD_DAYS_OF_SALE
-    )
-
-    total_units_needed = (
-        outside_event_sales
-        if days_to_event > days_threshold
-        else outside_event_sales + forecast[f"{nearest_event}_forecasted_sales"]
-    )
-    forecast["total units needed"] = total_units_needed
-
-    asin_inventory = calculate_amazon_inventory(amazon_inventory)
-    sku_inventory = calculate_amazon_inventory(amazon_inventory, col_to_use="sku")
-
-    forecast = pd.merge(
-        forecast, asin_inventory, how="outer", on="asin", validate="1:1"
-    ).fillna(0)
-
-    forecast["to_ship_units"] = (
-        (forecast["total units needed"] - forecast["amz_inventory"]).clip(0).round(0)
-    )
-
-    forecast["dos_available"] = forecast["amz_available"] / forecast["avg units"]
-    forecast["dos_inbound"] = forecast["amz_inventory"] / forecast["avg units"]
-
-    # forecast['dos_shipped'] = (forecast['to_ship_boxes'] * forecast['sets in a box'] + forecast['amz_inventory'])/ forecast["avg units"]
-    forecast["dos_shipped"] = "=(Y:Y*X:X+O:O)/H:H"
-
-    # lost sales calculations
-    forecast["avg price"] = forecast["avg $"] / forecast["avg units"]
-    max_inventory_sales = forecast[
-        ["amz_inventory", f"{max_sales_date_str} sales"]
-    ].max(axis=1)
-    min_inventory_sales = forecast[
-        ["amz_available", f"{max_sales_date_str} sales"]
-    ].max(axis=1)
-
-    forecast["lost sales min"] = (forecast["avg units"] - max_inventory_sales).clip(
-        0
-    ) * forecast["avg price"]
-    forecast["lost sales max"] = (forecast["avg units"] - min_inventory_sales).clip(
-        0
-    ) * forecast["avg price"]
-
-    dimensions = dimensions[["asin", "sets in a box"]]
-    dimensions = dimensions.drop_duplicates("asin")
-    forecast = pd.merge(forecast, dimensions, how="left", on="asin", validate="1:1")
-    forecast["to_ship_boxes"] = (
-        forecast["to_ship_units"] / forecast["sets in a box"]
-    ).round(0)
-
-    # dictionary_obj = gd.download_file(file_id="1RzO_OLIrvgtXYeGUncELyFgG-jJdCheB")
-    # dictionary = pd.read_excel(dictionary_obj)
     dictionary.columns = [x.lower().strip() for x in dictionary.columns]
     dictionary = dictionary[
         ["sku", "asin", "life stage", "restockable", "collection", "size", "color"]
@@ -184,7 +129,111 @@ def calculate_restock(
         )
         .reset_index()
     )
+    return asin_wh_inventory
 
+
+def calculate_restock(
+    include_events: bool,
+    num_days: int = 180,
+    max_date: str | None = None,
+    num_short_term_days=14,
+):
+    """
+    Ruslan
+    1. calculate in-stock-rate for the period (amz_inventory)
+    2. calculate average sales LONG_TERM and SHORT_TERM (180 days and 14 days)
+    3. calculate average combined as average of (average sales 180 days and 14 days)
+    4. calculate units needed (min 0, avoid negative numbers) for 49 days
+    combine two dataframes into one and output the following columns:
+        asin, average_sales_180, average_sales_14, average_combined, isr, amz_inventory (latest), wh_inventory (latest), units_to_ship
+    """
+
+    (
+        amazon_sales,
+        wh_inventory,
+        amazon_inventory,
+        full_event_spreadsheet,
+        dictionary,
+        dimensions,
+        incoming_weeks,
+    ) = prepare_data(num_days, max_date)
+    # add latest day sales
+    # add event performance
+    total_sales, sku_isr, max_sales_date_str = prepare_total_sales(
+        amazon_sales, amazon_inventory, include_events, num_days, num_short_term_days
+    )
+
+    nearest_event, days_to_event, event_duration = get_event_days_delta()
+
+    event_forecast = calculate_event_forecast(
+        total_sales=total_sales,
+        full_event_df=full_event_spreadsheet,
+        event=nearest_event,
+    )
+
+    forecast = pd.merge(
+        total_sales, event_forecast, how="outer", on="asin", validate="1:1"
+    )
+
+    days_threshold = 45 if nearest_event == "BSS" else 90
+
+    calculated_days_to_event = 0 if days_to_event > days_threshold else days_to_event
+    outside_event_sales = forecast["avg units"] * (
+        calculated_days_to_event + STANDARD_DAYS_OF_SALE
+    )
+
+    total_units_needed = (
+        outside_event_sales
+        if days_to_event > days_threshold
+        else outside_event_sales + forecast[f"{nearest_event}_forecasted_sales"]
+    )
+    forecast["total units needed"] = total_units_needed
+
+    asin_inventory = calculate_amazon_inventory(amazon_inventory)
+    sku_inventory = calculate_amazon_inventory(
+        amazon_inventory, col_to_use="sku", show_warning=False
+    )
+
+    forecast = pd.merge(
+        forecast, asin_inventory, how="outer", on="asin", validate="1:1"
+    )
+    non_date_cols = [x for x in forecast.columns if x != "date"]
+    forecast[non_date_cols] = forecast[non_date_cols].fillna(0)
+
+    forecast["to_ship_units"] = (
+        (forecast["total units needed"] - forecast["amz_inventory"]).clip(0).round(0)
+    )
+
+    forecast["dos_available"] = forecast["amz_available"] / forecast["avg units"]
+    forecast["dos_inbound"] = forecast["amz_inventory"] / forecast["avg units"]
+
+    # forecast['dos_shipped'] = (forecast['to_ship_boxes'] * forecast['sets in a box'] + forecast['amz_inventory'])/ forecast["avg units"]
+    forecast["dos_shipped"] = ""
+
+    # lost sales calculations
+    forecast["avg price"] = forecast["avg $"] / forecast["avg units"]
+    max_inventory_sales = forecast[
+        ["amz_inventory", f"{max_sales_date_str} sales"]
+    ].max(axis=1)
+    min_inventory_sales = forecast[
+        ["amz_available", f"{max_sales_date_str} sales"]
+    ].max(axis=1)
+
+    forecast["lost sales min"] = (forecast["avg units"] - max_inventory_sales).clip(
+        0
+    ) * forecast["avg price"]
+    forecast["lost sales max"] = (forecast["avg units"] - min_inventory_sales).clip(
+        0
+    ) * forecast["avg price"]
+
+    dimensions = dimensions[["asin", "sets in a box"]]
+    dimensions = dimensions.drop_duplicates("asin")
+    forecast = pd.merge(forecast, dimensions, how="left", on="asin", validate="1:1")
+    forecast["to_ship_boxes"] = (
+        forecast["to_ship_units"] / forecast["sets in a box"]
+    ).round(0)
+
+    asin_wh_inventory = prepare_wh_inventory(dictionary, wh_inventory)
     forecast = pd.merge(
         forecast, asin_wh_inventory, how="outer", on="asin", validate="1:1"
     )
@@ -209,10 +258,10 @@ def calculate_restock(
         "asin",
         "ISR",
         "ISR_short",
-        "avg sales dollar, 14 days",
-        "avg sales units, 14 days",
-        "avg sales dollar, 180 days",
-        "avg sales units, 180 days",
+        f"avg sales dollar, {num_short_term_days} days",
+        f"avg sales units, {num_short_term_days} days",
+        f"avg sales dollar, {num_days} days",
+        f"avg sales units, {num_days} days",
         "avg units",
         "avg $",
         f"{max_sales_date_str} sales",
@@ -241,8 +290,20 @@ def calculate_restock(
         "color",
         "sku_mapping",
         "date",
+        "alert",
+        "recommended_action",
+        "healthy_inventory_level",
+        "recommended_removal_quantity",
+        "estimated_excess_quantity",
+        "fba_minimum_inventory_level",
+        "fba_inventory_level_health_status",
+        "storage_type",
     ]
+
+    forecast = forecast[HARD_COLUMNS]
+    forecast["dos_shipped"] = "=(Y:Y*X:X+O:O)/H:H"
     file_date = pd.to_datetime("today").strftime("%Y-%m-%d")
+
     forecast["date"] = file_date
     forecast_columns = forecast.columns.tolist()
     if not forecast_columns == HARD_COLUMNS:
@@ -267,6 +328,9 @@ def calculate_restock(
         sku_inventory, wh_inventory, how="outer", on="sku", validate="1:1"
     )
     sku_results = pd.merge(sku_results, sku_isr, how="outer", on="sku", validate="1:1")
+    sku_results = pd.merge(
+        sku_results, incoming_weeks, how="outer", on="sku", validate="1:1"
+    )
 
     mm.export_to_excel(
         dfs=[forecast, sku_results],

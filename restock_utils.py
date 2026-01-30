@@ -3,6 +3,7 @@ import numpy as np
 from datetime import timedelta
 from date_utils import get_last_non_event_days, events
 from typing import Literal
+from tkinter.messagebox import showwarning
 
 
 def calculate_inventory_isr(
@@ -16,7 +17,7 @@ def calculate_inventory_isr(
     else:
         inv_max_date = pd.to_datetime(inv_max_date_input).date()
 
-    inventory_grouped: pd.DataFrame = (
+    inventory_grouped = (
         amazon_inventory.groupby(["date", col_to_use]).agg("sum").reset_index()
     )
 
@@ -281,29 +282,62 @@ def calculate_amazon_inventory(
     amazon_inventory: pd.DataFrame,
     max_date: str | None = None,
     col_to_use: Literal["asin", "sku"] = "asin",
+    show_warning=True,
 ) -> pd.DataFrame:
     # max_date = amazon_inventory["date"].max()
     if max_date:
         max_date_dt = pd.to_datetime(max_date).date()
     else:
         max_date_dt = (pd.to_datetime("today") - pd.Timedelta(days=1)).date()
-    last_inventory: pd.DataFrame = amazon_inventory[
-        amazon_inventory["date"] >= max_date_dt - timedelta(days=1)
-    ]
+    check_date = max_date_dt - timedelta(days=1)
+    last_inventory = amazon_inventory[amazon_inventory["date"] >= check_date]
+
+    attempts = 1
+    while len(last_inventory) == 0 and attempts <= 10 and show_warning:
+
+        attempts += 1
+
+        showwarning(
+            title="No inv data",
+            message="No inventory data found for yesterday!!!",
+            icon="warning",
+            detail=f"Report shows zero for AMZ inventory on {check_date} - caution!",
+        )
+        check_date = max_date_dt - timedelta(days=attempts)
+
+        last_inventory: pd.DataFrame = amazon_inventory[
+            amazon_inventory["date"] >= check_date
+        ]
+
+        if len(last_inventory) > 0:
+            showwarning(
+                title="Found inventory",
+                message=f"Inventory exists for {check_date} only!",
+            )
+            break
 
     last_inventory = (
         last_inventory.groupby(["date", col_to_use])
-        .agg({"amz_inventory": "sum", "amz_available": "sum"})
+        .agg(
+            {
+                "amz_inventory": "sum",
+                "amz_available": "sum",
+                "alert": lambda x: ", ".join(x.unique()),
+                "recommended_action": lambda x: ", ".join(x.unique()),
+                "healthy_inventory_level": "sum",
+                "recommended_removal_quantity": "sum",
+                "estimated_excess_quantity": "sum",
+                "fba_minimum_inventory_level": "sum",
+                "fba_inventory_level_health_status": lambda x: ", ".join(x.unique()),
+                "storage_type": lambda x: ", ".join(x.unique()),
+            }
+        )
         .reset_index()
     )
 
     last_inventory = last_inventory.sort_values(["date", col_to_use], ascending=False)
 
-    last_inventory = (
-        last_inventory.groupby(col_to_use)
-        .agg({"amz_inventory": "first", "amz_available": "first"})
-        .reset_index()
-    )
+    last_inventory = last_inventory.groupby(col_to_use).agg("first").reset_index()
     return last_inventory
 
 

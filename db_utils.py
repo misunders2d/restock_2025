@@ -94,7 +94,15 @@ def get_amazon_inventory(
             sku,
             asin,
             available as amz_available,
-            Inventory_Supply_at_FBA AS amz_inventory
+            Inventory_Supply_at_FBA AS amz_inventory,
+            alert,
+            recommended_action,
+            healthy_inventory_level,
+            recommended_removal_quantity,
+            estimated_excess_quantity,
+            fba_minimum_inventory_level,
+            fba_inventory_level_health_status,
+            storage_type
         FROM
             `mellanni-project-da.reports.fba_inventory_planning`
         WHERE
