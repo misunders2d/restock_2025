@@ -214,25 +214,12 @@ def get_dictionary(output: dict, to_print: bool = False) -> pd.DataFrame | None:
     try:
         if to_print:
             print("Starting to run `get_dictionary`")
-        # dictionary_obj = gd.download_file(file_id="1RzO_OLIrvgtXYeGUncELyFgG-jJdCheB")
-        # dictionary = pd.read_excel(
-        #     dictionary_obj,
-        #     usecols=[
-        #         "SKU",
-        #         "ASIN",
-        #         "Collection",
-        #         "Size",
-        #         "Color",
-        #         "Actuality",
-        #         "Life stage",
-        #         "Restockable",
-        #     ],
-        # )
         dictionary = gd.download_gspread(
             spreadsheet_id="1Y4XhSBCXqmEVHHOnugEpzZZ3NQ5ZRGOlp-AsTE0KmRE",
             sheet_id="449289593",
         )
-        dictionary = dictionary[
+        dictionary = dictionary.loc[
+            :,
             [
                 "SKU",
                 "ASIN",
@@ -242,7 +229,7 @@ def get_dictionary(output: dict, to_print: bool = False) -> pd.DataFrame | None:
                 "Actuality",
                 "Life stage",
                 "Restockable",
-            ]
+            ],
         ]
 
         dictionary.columns = [x.lower() for x in dictionary.columns]

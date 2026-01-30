@@ -5,6 +5,8 @@ from tkinter import messagebox
 from datetime import timedelta
 
 from utils import mellanni_modules as mm
+from utils_misc import create_column_formatting
+
 from restock_utils import (
     calculate_inventory_isr,
     get_asin_sales,
@@ -12,7 +14,6 @@ from restock_utils import (
     calculate_amazon_inventory,
     group_incoming_by_weeks,
 )
-from utils_misc import create_column_formatting
 from db_utils import pull_data
 from date_utils import get_event_days_delta
 
@@ -23,7 +24,23 @@ user_folder = os.path.join(os.path.expanduser("~"), "temp")
 os.makedirs(user_folder, exist_ok=True)
 
 
-def prepare_data(num_days, max_date):
+def calculate_restock(
+    include_events: bool,
+    num_days: int = 180,
+    max_date: str | None = None,
+    num_short_term_days=14,
+):
+    """
+    Ruslan
+    1. calculate in-stock-rate for the period (amz_inventory)
+    2. calculate average sales LONG_TERM and SHORT_TERM (180 days and 14 days)
+    3. calculate average combined as average of (average sales 180 days and 14 days)
+    4. calculate units needed (min 0, avoid negative numbers) for 49 days
+    combine two dataframes into one and output the following columns:
+        asin, average_sales_180, average_sales_14, average_combined, isr, amz_inventory (latest), wh_inventory (latest), units_to_ship
+    """
+
+    # prepare data block###################
     results = pull_data(num_days=num_days, max_date=max_date)
 
     amazon_sales_full = results["get_amazon_sales"]
@@ -43,20 +60,9 @@ def prepare_data(num_days, max_date):
 
     incoming_weeks = group_incoming_by_weeks(incoming_weeks_raw)
     incoming_weeks = incoming_weeks.rename(columns={"SKU": "sku"})
-    return (
-        amazon_sales,
-        wh_inventory,
-        amazon_inventory,
-        full_event_spreadsheet,
-        dictionary,
-        dimensions,
-        incoming_weeks,
-    )
+    # end of prepare data block#############
 
-
-def prepare_total_sales(
-    amazon_sales, amazon_inventory, include_events, num_days, num_short_term_days
-):
+    # prepare total sales block############3
     max_sales_date = amazon_sales["date"].max()
     today = pd.to_datetime("today")
     if max_sales_date.date() == today.date():
@@ -90,11 +96,9 @@ def prepare_total_sales(
     total_sales[f"{max_sales_date_str} sales"] = total_sales[
         f"{max_sales_date_str} sales"
     ].fillna(0)
-    return total_sales, sku_isr, max_sales_date_str
+    # end of prepare total sales block#####
 
-
-def prepare_wh_inventory(dictionary, wh_inventory):
-
+    # prepare wh inventory block#########
     dictionary.columns = [x.lower().strip() for x in dictionary.columns]
     dictionary = dictionary[
         ["sku", "asin", "life stage", "restockable", "collection", "size", "color"]
@@ -129,41 +133,8 @@ def prepare_wh_inventory(dictionary, wh_inventory):
         )
         .reset_index()
     )
-    return asin_wh_inventory
 
-
-def calculate_restock(
-    include_events: bool,
-    num_days: int = 180,
-    max_date: str | None = None,
-    num_short_term_days=14,
-):
-    """
-    Ruslan
-    1. calculate in-stock-rate for the period (amz_inventory)
-    2. calculate average sales LONG_TERM and SHORT_TERM (180 days and 14 days)
-    3. calculate average combined as average of (average sales 180 days and 14 days)
-    4. calculate units needed (min 0, avoid negative numbers) for 49 days
-    combine two dataframes into one and output the following columns:
-        asin, average_sales_180, average_sales_14, average_combined, isr, amz_inventory (latest), wh_inventory (latest), units_to_ship
-    """
-
-    (
-        amazon_sales,
-        wh_inventory,
-        amazon_inventory,
-        full_event_spreadsheet,
-        dictionary,
-        dimensions,
-        incoming_weeks,
-    ) = prepare_data(num_days, max_date)
-    # add latest day sales
-    # add event performance
-    total_sales, sku_isr, max_sales_date_str = prepare_total_sales(
-        amazon_sales, amazon_inventory, include_events, num_days, num_short_term_days
-    )
-
-    nearest_event, days_to_event, event_duration = get_event_days_delta()
+    nearest_event, days_to_event, _ = get_event_days_delta()
 
     event_forecast = calculate_event_forecast(
         total_sales=total_sales,
@@ -207,7 +178,6 @@ def calculate_restock(
     forecast["dos_available"] = forecast["amz_available"] / forecast["avg units"]
     forecast["dos_inbound"] = forecast["amz_inventory"] / forecast["avg units"]
 
-    # forecast['dos_shipped'] = (forecast['to_ship_boxes'] * forecast['sets in a box'] + forecast['amz_inventory'])/ forecast["avg units"]
     forecast["dos_shipped"] = ""
 
     # lost sales calculations
@@ -233,7 +203,8 @@ def calculate_restock(
         forecast["to_ship_units"] / forecast["sets in a box"]
     ).round(0)
 
-    asin_wh_inventory = prepare_wh_inventory(dictionary, wh_inventory)
+    # end of prepare wh inventory block#####
+
     forecast = pd.merge(
         forecast, asin_wh_inventory, how="outer", on="asin", validate="1:1"
     )
@@ -300,7 +271,7 @@ def calculate_restock(
         "storage_type",
     ]
 
-    forecast = forecast[HARD_COLUMNS]
+    forecast = forecast.loc[:, HARD_COLUMNS]
     forecast["dos_shipped"] = "=(Y:Y*X:X+O:O)/H:H"
     file_date = pd.to_datetime("today").strftime("%Y-%m-%d")
 

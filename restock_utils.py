@@ -10,8 +10,11 @@ def calculate_inventory_isr(
     amazon_inventory: pd.DataFrame,
     inv_max_date_input: str | None = None,
     col_to_use: Literal["asin", "sku"] = "asin",
-):  # done
+):
 
+    amazon_inventory = amazon_inventory.copy()
+
+    amazon_inventory["date"] = pd.to_datetime(amazon_inventory["date"]).dt.date
     if not inv_max_date_input:
         inv_max_date = amazon_inventory["date"].max()
     else:
@@ -25,8 +28,9 @@ def calculate_inventory_isr(
 
     inventory_grouped["in-stock-rate"] = inventory_grouped["amz_inventory"] > 0
 
-    two_week_inventory = inventory_grouped[
-        (inventory_grouped["date"] >= inv_max_date - pd.Timedelta(days=13))
+    two_week_inventory = inventory_grouped.loc[
+        inventory_grouped["date"]
+        >= pd.to_datetime(inv_max_date) - pd.Timedelta(days=13)
     ]
 
     asin_isr_long_term = (
@@ -79,7 +83,9 @@ def get_asin_sales(
         num_days=short_term_days, max_date=sales_max_date, include_events=include_events
     )
 
-    amazon_sales = amazon_sales[amazon_sales["date"].isin(non_event_days)]
+    amazon_sales["date"] = pd.to_datetime(amazon_sales["date"]).dt.date
+
+    amazon_sales = amazon_sales.loc[amazon_sales["date"].isin(non_event_days)]
     amazon_sales = amazon_sales.fillna(0)
 
     latest_sales = amazon_sales[amazon_sales["date"].isin(non_event_days_short)]
@@ -193,7 +199,7 @@ def filter_event_spreadsheet(
                     "Best PBDD performance",
                 ]
 
-        spreadsheet = full_spreadsheet[columns_to_return].copy()
+        spreadsheet = full_spreadsheet.loc[:, columns_to_return].copy()
         spreadsheet = spreadsheet.rename(
             columns={
                 "ASIN": "asin",
@@ -290,7 +296,7 @@ def calculate_amazon_inventory(
     else:
         max_date_dt = (pd.to_datetime("today") - pd.Timedelta(days=1)).date()
     check_date = max_date_dt - timedelta(days=1)
-    last_inventory = amazon_inventory[amazon_inventory["date"] >= check_date]
+    last_inventory = amazon_inventory.loc[:, amazon_inventory["date"] >= check_date]
 
     attempts = 1
     while len(last_inventory) == 0 and attempts <= 10 and show_warning:
@@ -305,8 +311,8 @@ def calculate_amazon_inventory(
         )
         check_date = max_date_dt - timedelta(days=attempts)
 
-        last_inventory: pd.DataFrame = amazon_inventory[
-            amazon_inventory["date"] >= check_date
+        last_inventory: pd.DataFrame = amazon_inventory.loc[
+            :, amazon_inventory["date"] >= check_date
         ]
 
         if len(last_inventory) > 0:
@@ -315,24 +321,24 @@ def calculate_amazon_inventory(
                 message=f"Inventory exists for {check_date} only!",
             )
             break
-
+    agg_dict = (
+        {
+            "amz_inventory": "sum",
+            "amz_available": "sum",
+            "alert": lambda x: ", ".join(x.unique()),
+            "recommended_action": lambda x: ", ".join(x.unique()),
+            "healthy_inventory_level": "sum",
+            "recommended_removal_quantity": "sum",
+            "estimated_excess_quantity": "sum",
+            "fba_minimum_inventory_level": "sum",
+            "fba_inventory_level_health_status": lambda x: ", ".join(x.unique()),
+            "storage_type": lambda x: ", ".join(x.unique()),
+        }
+        if col_to_use == "asin"
+        else {"amz_inventory": "sum", "amz_available": "sum"}
+    )
     last_inventory = (
-        last_inventory.groupby(["date", col_to_use])
-        .agg(
-            {
-                "amz_inventory": "sum",
-                "amz_available": "sum",
-                "alert": lambda x: ", ".join(x.unique()),
-                "recommended_action": lambda x: ", ".join(x.unique()),
-                "healthy_inventory_level": "sum",
-                "recommended_removal_quantity": "sum",
-                "estimated_excess_quantity": "sum",
-                "fba_minimum_inventory_level": "sum",
-                "fba_inventory_level_health_status": lambda x: ", ".join(x.unique()),
-                "storage_type": lambda x: ", ".join(x.unique()),
-            }
-        )
-        .reset_index()
+        last_inventory.groupby(["date", col_to_use]).agg(agg_dict).reset_index()
     )
 
     last_inventory = last_inventory.sort_values(["date", col_to_use], ascending=False)
@@ -347,7 +353,7 @@ def group_incoming_by_weeks(incoming_weeks: pd.DataFrame) -> pd.DataFrame:
     """
 
     tables_list = []
-    for i, row in incoming_weeks.iterrows():
+    for _, row in incoming_weeks.iterrows():
         temp_df = pd.DataFrame()
         for item in row["items"]:
             items_df = pd.DataFrame.from_dict(item, orient="index").T
@@ -378,5 +384,5 @@ def group_incoming_by_weeks(incoming_weeks: pd.DataFrame) -> pd.DataFrame:
     sorted_columns = sorted(
         current_columns, key=lambda x: (int(x.split("-")[0]), int(x.split("-")[1]))
     )
-    full_containers = full_containers[["SKU"] + sorted_columns]
+    full_containers = full_containers.loc[:, ["SKU"] + sorted_columns]
     return full_containers

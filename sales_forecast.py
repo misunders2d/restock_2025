@@ -169,13 +169,14 @@ def main(
 
     forecast_dollars = forecast.copy()
 
+    total = None
     if stack == "stacked":
         total = pd.DataFrame()
         for date in future_date_range:
             forecast["date"] = date.date()
             if event := is_event(date.year, date.month, date.day):
                 event_forecast = calculate_event_forecast(
-                    total_sales=forecast[["asin", "avg units"]],
+                    total_sales=forecast.loc[:, ["asin", "avg units"]],
                     full_event_df=results["get_event_spreadsheet"],
                     event=event,
                 )
@@ -289,7 +290,11 @@ def main(
     thread2 = threading.Thread(
         target=mm.export_to_excel,
         args=(
-            [total] if stack else [forecast, forecast_dollars],
+            (
+                [total]
+                if stack == "stacked" and total is not None
+                else [forecast, forecast_dollars]
+            ),
             ["forecast"] if stack else ["forecast, units", "forecast, dollars"],
             "sales_forecast.xlsx",
             user_folder,
