@@ -327,7 +327,7 @@ def calculate_amazon_inventory(
         x = x.astype(str)
         x = x.replace("nan", "n/a")
         x = x.replace(np.nan, "n/a")
-        return ", ".join(sorted(x.unique().tolist()))
+        return ", ".join([x for x in sorted(x.unique().tolist()) if x != "n/a"])
 
     agg_dict = (
         {
