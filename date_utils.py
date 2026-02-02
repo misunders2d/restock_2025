@@ -50,7 +50,7 @@ def get_month_day(
 
 
 events = {
-    "BSS": {"month": 3, "day": 20, "duration": 7},
+    "BSS": {"month": 3, "day": 25, "duration": 7},
     "PD": {"month": 7, "day": 10, "duration": 4},
     "PBDD": {"month": 10, "day": 7, "duration": 2},
     "BFCM": {
