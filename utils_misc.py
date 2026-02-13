@@ -1,10 +1,11 @@
-import openpyxl
 import re
+from tkinter.filedialog import askopenfilename
+from typing import Any
+
+import openpyxl
 import pandas as pd
 from common import user_folder
-from tkinter.filedialog import askopenfilename
 from connectors import gcloud as gc
-from typing import Any
 
 
 def create_column_formatting(
@@ -94,9 +95,9 @@ def create_column_formatting(
     return column_formatting
 
 
-def load_excel_with_hyperlinks(file_path):
+def load_excel_with_hyperlinks(file_path, sheet_name: str | None = None):
     wb = openpyxl.load_workbook(file_path, data_only=False)
-    sheet = wb.active
+    sheet = wb.active if not sheet_name else wb[sheet_name]
     if not sheet:
         raise ValueError("The Excel file does not contain any sheets.")
 
@@ -129,7 +130,7 @@ def push_restock_to_bq() -> None:
     file_path = askopenfilename(
         title="Select a file with the forecast", initialdir=user_folder
     )
-    restock = load_excel_with_hyperlinks(file_path)
+    restock = load_excel_with_hyperlinks(file_path, sheet_name="restock")
 
     if (
         not isinstance(restock, pd.DataFrame)

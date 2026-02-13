@@ -14,3 +14,8 @@ dependencies = [
 
 [tool.uv.sources]
 helper-modules = { git = "https://github.com/misunders2d/helper-modules.git", rev = "master" }
+
+[dependency-groups]
+dev = [
+    "ipython>=9.10.0",
+]
