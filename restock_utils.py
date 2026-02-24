@@ -1,9 +1,11 @@
-import pandas as pd
-import numpy as np
 from datetime import timedelta
-from date_utils import get_last_non_event_days, events
-from typing import Literal
 from tkinter.messagebox import showwarning
+from typing import Literal
+
+import numpy as np
+import pandas as pd
+
+from date_utils import events, get_last_non_event_days
 
 
 def calculate_inventory_isr(
@@ -156,10 +158,36 @@ def get_asin_sales(
         (0.6 * total_sales[f"avg sales units, {short_term_days} days"])
         + (0.4 * total_sales[f"avg sales units, {long_term_days} days"])
     ).round(4)
+
+    total_sales.loc[
+        (
+            total_sales[f"avg sales units, {short_term_days} days"]
+            / total_sales[f"avg sales units, {long_term_days} days"]
+        )
+        > 5,
+        "avg units",
+    ] = (0.1 * total_sales[f"avg sales units, {short_term_days} days"]) + (
+        0.9 * total_sales[f"avg sales units, {long_term_days} days"]
+    ).round(
+        4
+    )
+
     total_sales["avg $"] = (
         (0.6 * total_sales[f"avg sales dollar, {short_term_days} days"])
         + (0.4 * total_sales[f"avg sales dollar, {long_term_days} days"])
     ).round(2)
+    total_sales.loc[
+        (
+            total_sales[f"avg sales units, {short_term_days} days"]
+            / total_sales[f"avg sales units, {long_term_days} days"]
+        )
+        > 5,
+        "avg $",
+    ] = (0.1 * total_sales[f"avg sales dollar, {short_term_days} days"]) + (
+        0.9 * total_sales[f"avg sales dollar, {long_term_days} days"]
+    ).round(
+        2
+    )
 
     total_sales = total_sales.replace("NaN", 0)
     total_sales = total_sales.replace([np.inf, -np.inf], 0)
