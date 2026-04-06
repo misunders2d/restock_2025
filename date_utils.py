@@ -1,7 +1,7 @@
 import datetime
-from typing import Literal, Any
-import pandas as pd
+from typing import Any, Literal
 
+import pandas as pd
 from common import event_dates
 
 current_year, current_month, current_day = (
@@ -51,7 +51,7 @@ def get_month_day(
 
 events = {
     "BSS": {"month": 3, "day": 25, "duration": 7},
-    "PD": {"month": 7, "day": 10, "duration": 4},
+    "PD": {"month": 6, "day": 23, "duration": 4},
     "PBDD": {"month": 10, "day": 7, "duration": 2},
     "BFCM": {
         "month": 11,
