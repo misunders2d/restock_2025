@@ -299,8 +299,8 @@ def calculate_event_forecast(
     ) / 2
 
     forecast.loc[forecast["avg units"] >= 3, f"{event}_forecasted_sales"] = (
-        average_event_performance + strong_performance
-    ) / 2
+        (average_event_performance + strong_performance) / 2
+    ) * 1.2
 
     return forecast[
         [
