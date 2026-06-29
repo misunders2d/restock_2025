@@ -1,4 +1,6 @@
 import datetime
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, Literal
 
 import pandas as pd
@@ -47,6 +49,44 @@ def get_month_day(
         raise ValueError("Invalid order value")
 
     return target_date.day
+
+
+class EventName(StrEnum):
+    BSS = "BSS"
+    PD = "PD"
+    PBDD = "PBDD"
+    BFCM = "BFCM"
+
+
+@dataclass()
+class Event:
+    name: EventName
+    month: int
+    start: int
+    duration: int
+    year: int | None = current_year
+
+    @property
+    def event_start(self):
+        if not self.year:
+            self.year = current_year
+        return datetime.date(self.year, self.month, self.start)
+
+    @property
+    def event_end(self):
+        if not self.year:
+            self.year = current_year
+        return datetime.date(self.year, self.month, self.start) + datetime.timedelta(
+            days=self.duration - 1
+        )
+
+    @property
+    def event_start_str(self):
+        return self.event_start.strftime(format="%Y-%m-%d 00:00:00")
+
+    @property
+    def event_end_str(self):
+        return self.event_end.strftime(format="%Y-%m-%d 23:59:59")
 
 
 events = {
@@ -116,6 +156,13 @@ def get_event_days_delta():
 
 
 def is_event(year, month, day) -> Any:
+    event_config = {
+        **events,
+        "BFCM": {
+            **events["BFCM"],
+            "day": get_month_day(11, year, 4, order="last"),
+        },
+    }
 
     future_event_dates = {
         key: pd.date_range(
@@ -124,9 +171,12 @@ def is_event(year, month, day) -> Any:
         )
         .to_pydatetime()
         .tolist()
-        for key, value in events.items()
+        for key, value in event_config.items()
     }
     for event in future_event_dates:
         if (month, day) in ((x.month, x.day) for x in future_event_dates[event]):
             return event
     return None
+
+
+event = Event(name=EventName.PD, month=6, start=23, duration=4)

@@ -7,6 +7,8 @@ import pandas as pd
 from common import user_folder
 from connectors import gcloud as gc
 
+from date_utils import Event, EventName
+
 
 def create_column_formatting(
     short_term_days: int = 14, long_term_days: int = 180
@@ -168,3 +170,68 @@ def push_forecast_to_bq() -> None:
     _ = gc.push_to_cloud(
         forecast, destination="daily_reports.forecast", if_exists="replace"
     )
+
+
+def compare_events():
+    """Helper function to compare hourly sales per ASIN between events"""
+    pd2025 = Event(name=EventName.PD, year=2025, month=7, start=8, duration=4)
+    pd2026 = Event(name=EventName.PD, year=2026, month=6, start=23, duration=4)
+
+    def _generate_query(event: Event):
+        return f"""
+        SELECT
+            DATETIME(purchase_date, "America/Los_Angeles") as pacific_datetime, 
+            sales_channel,
+            asin,
+            quantity,
+            item_price,
+            item_promotion_discount,
+            order_status, item_status
+            from `mellanni-project-da.reports.all_orders`
+        WHERE DATETIME(purchase_date, "America/Los_Angeles") BETWEEN DATETIME("{event.event_start_str}") AND DATETIME("{event.event_end_str}")
+        AND LOWER(sales_channel) = "amazon.com"
+    """
+
+    def _generate_hourly_template(asin_df):
+        asins = asin_df["asin"].values.tolist()
+        days = ["day 1", "day 2", "day 3", "day 4"]
+        hours = range(24)
+
+        columns = ["Day", "Hour", "ASIN"]
+        full_template = pd.DataFrame(columns=columns)
+
+        for day in days:
+            for hour in hours:
+                temp = pd.DataFrame(columns=columns)
+                temp["ASIN"] = asins
+                temp["Day"] = day
+                temp["Hour"] = hour
+
+                full_template = pd.concat([full_template, temp])
+
+        return full_template
+
+    query_event1 = _generate_query(pd2025)
+    query_event2 = _generate_query(pd2026)
+
+    with gc.gcloud_connect() as client:
+        event1_result = client.query(query_event1).to_dataframe()
+        event2_result = client.query(query_event2).to_dataframe()
+        dict_result = client.query(
+            "select distinct(asin) from  `mellanni-project-da.auxillary_development.dictionary`"
+        ).to_dataframe()
+
+    event1_result["pacific_datetime"] = event1_result["purchase_date"].dt.tz_localize(
+        None
+    )
+    event2_result["pacific_datetime"] = event2_result["purchase_date"].dt.tz_localize(
+        None
+    )
+    asin_template = _generate_hourly_template(dict_result)
+
+    with pd.ExcelWriter(
+        path="/home/misunderstood/temp/results.xlsx", engine="xlsxwriter"
+    ) as writer:
+        event1_result.to_excel(writer, sheet_name="pd2025", index=False)
+        event2_result.to_excel(writer, sheet_name="pd2026", index=False)
+        asin_template.to_excel(writer, sheet_name="full template", index=False)
