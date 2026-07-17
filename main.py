@@ -18,6 +18,7 @@ from restock_utils import (
 from utils_misc import create_column_formatting
 
 STANDARD_DAYS_OF_SALE = 49
+USE_LOCAL_FILE = False  # use this to add a local all_orders file for last day sales when bigquery is lagging
 
 max_date = None
 include_events: bool = False
@@ -32,11 +33,24 @@ os.makedirs(user_folder, exist_ok=True)
 
 def prepare_data():
     # prepare data block###################
-    global amazon_sales, wh_inventory, amazon_inventory, full_event_spreadsheet, dictionary, dimensions, incoming_weeks, results
+    global \
+        amazon_sales, \
+        wh_inventory, \
+        amazon_inventory, \
+        full_event_spreadsheet, \
+        dictionary, \
+        dimensions, \
+        incoming_weeks, \
+        results
     results = pull_data(num_days=num_days, max_date=max_date)
 
     amazon_sales_full = results["get_amazon_sales"]
     amazon_sales_full["date"] = pd.to_datetime(amazon_sales_full["date"])
+    if USE_LOCAL_FILE:
+        from db_utils import get_amazon_sales_from_file
+
+        amazon_sales_full = get_amazon_sales_from_file(amazon_sales_full)
+        amazon_sales_full["date"] = pd.to_datetime(amazon_sales_full["date"])
     amazon_sales = (
         amazon_sales_full.groupby(["date", "asin"])
         .agg({"unit_sales": "sum", "dollar_sales": "sum"})
@@ -96,7 +110,13 @@ def prepare_total_sales():
 
 
 def prepare_wh_inventory():
-    global dictionary, wh_inventory, forecast, asin_wh_inventory, nearest_event, sku_inventory
+    global \
+        dictionary, \
+        wh_inventory, \
+        forecast, \
+        asin_wh_inventory, \
+        nearest_event, \
+        sku_inventory
     # prepare wh inventory block#########
     dictionary.columns = [x.lower().strip() for x in dictionary.columns]
     dictionary = dictionary[
@@ -311,7 +331,21 @@ def calculate_restock(
     max_date: str | None = None,
     num_short_term_days=14,
 ):
-    global amazon_sales, wh_inventory, amazon_inventory, full_event_spreadsheet, dictionary, dimensions, incoming_weeks, results, total_sales, max_sales_date_str, sku_isr, forecast, asin_wh_inventory, sku_results
+    global \
+        amazon_sales, \
+        wh_inventory, \
+        amazon_inventory, \
+        full_event_spreadsheet, \
+        dictionary, \
+        dimensions, \
+        incoming_weeks, \
+        results, \
+        total_sales, \
+        max_sales_date_str, \
+        sku_isr, \
+        forecast, \
+        asin_wh_inventory, \
+        sku_results
 
     """
     Ruslan

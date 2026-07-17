@@ -1,9 +1,10 @@
-import pandas as pd
-from connectors import gdrive as gd
-from connectors import gcloud as gc
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
 
+import pandas as pd
+from connectors import gcloud as gc
+from connectors import gdrive as gd
 from utils import size_match
 
 EVENT_SPREADSHEET_ID = "1_gSk2xSDuyEQ9qzI15NJBxVCBZSJMuTKS1pDsvnfes8"  # google spreadsheet with events data
@@ -70,6 +71,44 @@ def get_amazon_sales(
         return result
     except Exception as e:
         raise BaseException(f"error happened: {e}")
+
+
+def get_amazon_sales_from_file(amazon_sales: pd.DataFrame):
+    from tkinter.filedialog import askopenfilename
+
+    import pytz
+
+    pacific = pytz.timezone("US/Pacific")
+    yesterday = datetime.now().date() - timedelta(days=1)
+    two_days = datetime.now().date() - timedelta(days=2)
+    skip_days = [yesterday, two_days]
+
+    file_path = askopenfilename(
+        initialdir=size_match.user_folder, title="Select a file with all orders"
+    )
+
+    all_orders = pd.read_csv(file_path, sep="\t")
+    all_orders["date"] = (
+        pd.to_datetime(all_orders["purchase-date"]).dt.tz_convert(pacific).dt.date
+    )
+    yesterday_orders = all_orders[
+        (pd.to_datetime(all_orders["date"]).dt.date.isin(skip_days))
+        & (all_orders["sales-channel"].str.lower() == "amazon.com")
+    ]
+    yesterday_total = (
+        yesterday_orders.groupby(["date", "sku", "asin"])
+        .agg({"quantity": "sum", "item-price": "sum"})
+        .reset_index()
+    )
+    yesterday_total = yesterday_total.rename(
+        columns={"quantity": "unit_sales", "item-price": "dollar_sales"}
+    )
+
+    amazon_sales = amazon_sales.loc[
+        ~pd.to_datetime(amazon_sales["date"]).dt.date.isin(skip_days)
+    ]
+
+    return pd.concat([amazon_sales, yesterday_total])
 
 
 def get_amazon_inventory(

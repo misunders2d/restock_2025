@@ -75,7 +75,11 @@ def get_asin_sales(
     short_term_days: int = 14,
 ):
     if not sales_max_date_input:
-        sales_max_date = (amazon_sales["date"].max() - pd.Timedelta(days=1)).date()
+        try:
+            sales_max_date = (amazon_sales["date"].max() - pd.Timedelta(days=1)).date()
+        except:
+            sales_max_date = amazon_sales["date"].max() - pd.Timedelta(days=1)
+
     else:
         sales_max_date = pd.to_datetime(sales_max_date_input).date()
     non_event_days = get_last_non_event_days(
@@ -168,9 +172,7 @@ def get_asin_sales(
         "avg units",
     ] = (0.1 * total_sales[f"avg sales units, {short_term_days} days"]) + (
         0.9 * total_sales[f"avg sales units, {long_term_days} days"]
-    ).round(
-        4
-    )
+    ).round(4)
 
     total_sales["avg $"] = (
         (0.6 * total_sales[f"avg sales dollar, {short_term_days} days"])
@@ -185,9 +187,7 @@ def get_asin_sales(
         "avg $",
     ] = (0.1 * total_sales[f"avg sales dollar, {short_term_days} days"]) + (
         0.9 * total_sales[f"avg sales dollar, {long_term_days} days"]
-    ).round(
-        2
-    )
+    ).round(2)
 
     total_sales = total_sales.replace("NaN", 0)
     total_sales = total_sales.replace([np.inf, -np.inf], 0)
@@ -250,10 +250,10 @@ def filter_event_spreadsheet(
 
 
 def calculate_event_forecast(
-    total_sales: pd.DataFrame,
+    total_sales: pd.DataFrame | None,
     full_event_df: pd.DataFrame,
     event: Literal["BFCM", "BSS", "PD", "PBDD"],
-):
+) -> pd.DataFrame | None:
 
     # verify that total_sales contains "asin" and "avg units" columns
     sales_cols = total_sales.columns
@@ -295,14 +295,14 @@ def calculate_event_forecast(
     ]  # * event_duration
 
     forecast[f"{event}_forecasted_sales"] = (
-        average_event_performance + poor_performance
-    ) / 2
+        (average_event_performance + poor_performance) / 2 * 0.75
+    )
 
     forecast.loc[forecast["avg units"] >= 3, f"{event}_forecasted_sales"] = (
         (average_event_performance + strong_performance) / 2
-    ) * 1.2
+    ) * 0.8
 
-    return forecast[
+    return forecast.loc[
         [
             "asin",
             f"Average {event} sales, units (total)",
@@ -317,7 +317,7 @@ def calculate_amazon_inventory(
     max_date: str | None = None,
     col_to_use: Literal["asin", "sku"] = "asin",
     show_warning=True,
-) -> pd.DataFrame:
+) -> pd.DataFrame | None:
     # max_date = amazon_inventory["date"].max()
     if max_date:
         max_date_dt = pd.to_datetime(max_date).date()
@@ -329,7 +329,6 @@ def calculate_amazon_inventory(
 
     attempts = 1
     while len(last_inventory) == 0 and attempts <= 10 and show_warning:
-
         attempts += 1
 
         showwarning(

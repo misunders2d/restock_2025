@@ -9,6 +9,7 @@ dependencies = [
     "google-cloud-storage>=3.4.0",
     "helper-modules",
     "pandas>=2.3.2",
+    "pytz>=2026.2",
     "xlsxwriter>=3.2.5",
 ]
 
