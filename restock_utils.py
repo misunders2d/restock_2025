@@ -250,10 +250,10 @@ def filter_event_spreadsheet(
 
 
 def calculate_event_forecast(
-    total_sales: pd.DataFrame | None,
+    total_sales: pd.DataFrame,
     full_event_df: pd.DataFrame,
     event: Literal["BFCM", "BSS", "PD", "PBDD"],
-) -> pd.DataFrame | None:
+):
 
     # verify that total_sales contains "asin" and "avg units" columns
     sales_cols = total_sales.columns
@@ -302,7 +302,7 @@ def calculate_event_forecast(
         (average_event_performance + strong_performance) / 2
     ) * 0.8
 
-    return forecast.loc[
+    return forecast[
         [
             "asin",
             f"Average {event} sales, units (total)",
@@ -317,7 +317,7 @@ def calculate_amazon_inventory(
     max_date: str | None = None,
     col_to_use: Literal["asin", "sku"] = "asin",
     show_warning=True,
-) -> pd.DataFrame | None:
+) -> pd.DataFrame:
     # max_date = amazon_inventory["date"].max()
     if max_date:
         max_date_dt = pd.to_datetime(max_date).date()
