@@ -73,9 +73,7 @@ def get_amazon_sales(
         raise BaseException(f"error happened: {e}")
 
 
-def get_amazon_sales_from_file(amazon_sales: pd.DataFrame):
-    from tkinter.filedialog import askopenfilename
-
+def get_amazon_sales_from_file(amazon_sales: pd.DataFrame, file_path: str):
     import pytz
 
     pacific = pytz.timezone("US/Pacific")
@@ -83,11 +81,7 @@ def get_amazon_sales_from_file(amazon_sales: pd.DataFrame):
     two_days = datetime.now().date() - timedelta(days=2)
     skip_days = [yesterday, two_days]
 
-    file_path = askopenfilename(
-        initialdir=size_match.user_folder, title="Select a file with all orders"
-    )
-
-    all_orders = pd.read_csv(file_path, sep="\t")
+    all_orders = pd.read_csv(file_path, sep=None, engine="python")
     all_orders["date"] = (
         pd.to_datetime(all_orders["purchase-date"]).dt.tz_convert(pacific).dt.date
     )

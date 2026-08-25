@@ -1,6 +1,7 @@
+import argparse
 import os
-import sys
-from datetime import timedelta
+from datetime import date, timedelta
+from pathlib import Path
 from tkinter import messagebox
 
 import pandas as pd
@@ -18,17 +19,35 @@ from restock_utils import (
 from utils_misc import create_column_formatting
 
 STANDARD_DAYS_OF_SALE = 49
-USE_LOCAL_FILE = False  # use this to add a local all_orders file for last day sales when bigquery is lagging
 
 max_date = None
 include_events: bool = False
 num_days: int = 180
 max_date: str | None = None
 num_short_term_days = 14
+local_sales_file: str | None = None
 
 
 user_folder = os.path.join(os.path.expanduser("~"), "temp")
 os.makedirs(user_folder, exist_ok=True)
+
+
+def parse_max_date(value: str) -> str:
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "must be a valid date in YYYY-MM-DD format"
+        ) from error
+
+
+def parse_local_sales_file(value: str) -> str:
+    path = Path(value)
+    if path.suffix.lower() not in {".csv", ".txt"}:
+        raise argparse.ArgumentTypeError("must be a .csv or .txt file")
+    if not path.is_file():
+        raise argparse.ArgumentTypeError(f"file not found: {path}")
+    return str(path)
 
 
 def prepare_data():
@@ -46,10 +65,12 @@ def prepare_data():
 
     amazon_sales_full = results["get_amazon_sales"]
     amazon_sales_full["date"] = pd.to_datetime(amazon_sales_full["date"])
-    if USE_LOCAL_FILE:
+    if local_sales_file:
         from db_utils import get_amazon_sales_from_file
 
-        amazon_sales_full = get_amazon_sales_from_file(amazon_sales_full)
+        amazon_sales_full = get_amazon_sales_from_file(
+            amazon_sales_full, local_sales_file
+        )
         amazon_sales_full["date"] = pd.to_datetime(amazon_sales_full["date"])
     amazon_sales = (
         amazon_sales_full.groupby(["date", "asin"])
@@ -330,6 +351,7 @@ def calculate_restock(
     num_days: int = 180,
     max_date: str | None = None,
     num_short_term_days=14,
+    sales_file_path: str | None = None,
 ):
     global \
         amazon_sales, \
@@ -345,7 +367,8 @@ def calculate_restock(
         sku_isr, \
         forecast, \
         asin_wh_inventory, \
-        sku_results
+        sku_results, \
+        local_sales_file
 
     """
     Ruslan
@@ -356,6 +379,14 @@ def calculate_restock(
     combine two dataframes into one and output the following columns:
         asin, average_sales_180, average_sales_14, average_combined, isr, amz_inventory (latest), wh_inventory (latest), units_to_ship
     """
+
+    globals().update(
+        include_events=include_events,
+        num_days=num_days,
+        max_date=max_date,
+        num_short_term_days=num_short_term_days,
+    )
+    local_sales_file = sales_file_path
 
     prepare_data()
 
@@ -377,11 +408,31 @@ def calculate_restock(
 
 
 if __name__ == "__main__":
-    max_date = None
-    if len(sys.argv) > 1:
-        max_date = sys.argv[1]
+    parser = argparse.ArgumentParser(
+        description="Generate Amazon inventory restock report."
+    )
+    parser.add_argument(
+        "max_date",
+        nargs="?",
+        metavar="YYYY-MM-DD",
+        type=parse_max_date,
+        help="Historical report cutoff date in YYYY-MM-DD format.",
+    )
+    parser.add_argument(
+        "-f",
+        "--file",
+        dest="sales_file_path",
+        type=parse_local_sales_file,
+        metavar="PATH",
+        help="CSV or TXT all-orders export used for recent sales.",
+    )
+    args = parser.parse_args()
+
     forecast, results = calculate_restock(
-        include_events=False, num_days=180, max_date=max_date
+        include_events=False,
+        num_days=180,
+        max_date=args.max_date,
+        sales_file_path=args.sales_file_path,
     )
 
 
